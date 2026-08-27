@@ -63,7 +63,7 @@ int main(int argc, char **argv)
 
   // =============
   G4bool visFlag = false;
-  G4bool ParallelWorldFlag = true;
+  G4bool ParallelWorldFlag = false;
   // ============
 
   // Detect interactive mode (if no arguments) and define UI session

@@ -35,8 +35,8 @@ using namespace std;
 
 void DetectPosition_ver0()
 {
-    vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
-    // vector<TString> folder = {"0ppm"};
+    // vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
+    vector<TString> folder = {"0ppm"};
 
     for (int folderID = 0; folderID < folder.size(); folderID++)
     {
@@ -149,13 +149,10 @@ void DetectPosition_ver0()
         {
             int eventID = 0;
             double primEnergy = 0.0;
-            string chamberNb;
 
             bool operator<(const EventChamberID &other) const
             {
-                if (eventID != other.eventID)
-                    return eventID < other.eventID;
-                return chamberNb < other.chamberNb;
+                return eventID < other.eventID;
             }
         } eventChamberID;
 
@@ -164,7 +161,6 @@ void DetectPosition_ver0()
         TTree *DetectorchamberTree = new TTree("DetectorchamberTree", "event-chamber-level tree from csvfile");
         DetectorchamberTree->Branch("eventID", &eventChamberID.eventID, "eventID/I");
         DetectorchamberTree->Branch("primEnergy", &eventChamberID.primEnergy, "primEnergy/D");
-        DetectorchamberTree->Branch("chamberNb", &eventChamberID.chamberNb);
         DetectorchamberTree->Branch("edepSum", &chamberEventData.edepSum, "edepSum/D");
         DetectorchamberTree->Branch("captureEdepSum", &chamberEventData.cpEdepSum, "captureEdepSum/D");
         DetectorchamberTree->Branch("scatterEdepSum", &chamberEventData.scEdepSum, "scatterEdepSum/D");
@@ -182,14 +178,13 @@ void DetectPosition_ver0()
 
         double primEnergy;
         int eventID, fPID, fPPID;
-        char chamberNb[256], fpname[256], fCProc[256];
-        char collection[256], fPreProc[256], fPostProc[256], fCModel[256];
-        double fPreKinE, fPostKinE, fEdep, fGTime, fLTime, fPTime, fDTime;
-        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ, fStepLength;
+        char fpname[256], fCProc[256];
+        char collection[256], fPreProc[256], fPostProc[256];
+        double fPreKinE, fPostKinE, fEdep, fGTime;
+        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ;
 
         HitTree->SetBranchAddress("eventID", &eventID);
         HitTree->SetBranchAddress("primEnergy", &primEnergy);
-        HitTree->SetBranchAddress("chamberNb", chamberNb);
         HitTree->SetBranchAddress("collection", collection);
         HitTree->SetBranchAddress("PID", &fPID);
         HitTree->SetBranchAddress("PPID", &fPPID);
@@ -197,21 +192,16 @@ void DetectPosition_ver0()
         HitTree->SetBranchAddress("PreProc", fPreProc);
         HitTree->SetBranchAddress("PostProc", fPostProc);
         HitTree->SetBranchAddress("CProc", fCProc);
-        HitTree->SetBranchAddress("CModel", fCModel);
         HitTree->SetBranchAddress("PreKinE", &fPreKinE);
         HitTree->SetBranchAddress("PostKinE", &fPostKinE);
         HitTree->SetBranchAddress("Edep", &fEdep);
         HitTree->SetBranchAddress("GTime", &fGTime);
-        HitTree->SetBranchAddress("LTime", &fLTime);
-        HitTree->SetBranchAddress("PTime", &fPTime);
-        HitTree->SetBranchAddress("DTime", &fDTime);
         HitTree->SetBranchAddress("PrePosX", &fPrePosX);
         HitTree->SetBranchAddress("PrePosY", &fPrePosY);
         HitTree->SetBranchAddress("PrePosZ", &fPrePosZ);
         HitTree->SetBranchAddress("PostPosX", &fPostPosX);
         HitTree->SetBranchAddress("PostPosY", &fPostPosY);
         HitTree->SetBranchAddress("PostPosZ", &fPostPosZ);
-        HitTree->SetBranchAddress("StepLength", &fStepLength);
 
         const vector<string> captureStepParticles = {"alpha", "triton"};
         // const vector<string> scatterStepParticles = {"proton", "C12", "O16", "N14"};
@@ -221,6 +211,7 @@ void DetectPosition_ver0()
         for (int i = 0; i < nHits; ++i)
         {
             HitTree->GetEntry(i);
+            if(string(collection) != "TrackerHitsCollection") continue;
 
             // double fEdepQ = 0.0;     // Initialize quenched energy deposit
             // const double kB = 0.012; // Birks' constant (mm/MeV)
@@ -237,53 +228,50 @@ void DetectPosition_ver0()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            if (string(chamberNb) == "target1")
+            EventChamberID eventChamberID{eventID, primEnergy};
+            auto &acc = DetectorchamberMap[eventChamberID];
+            acc.edepSum += fEdep;
+
+            /* screening conditions for Capture & Scatter event*/
+            const bool isCaptureParticle =
+                find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
+            const bool isScatterParticle =
+                find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
+
+            const bool isCaptureDepositStep =
+                (fEdep > 0.0) &&
+                isCaptureParticle &&
+                (string(fCProc) == "neutronInelastic");
+            const bool isScatterDepositStep =
+                (fEdep > 0.0) &&
+                isScatterParticle &&
+                // isPrimaryNeutronSecondary &&
+                (string(fCProc) == "hadElastic");
+
+            if (isCaptureDepositStep)
             {
-                EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
-                auto &acc = DetectorchamberMap[eventChamberID];
-                acc.edepSum += fEdep;
+                acc.cpEdepSum += fEdep;
 
-                /* screening conditions for Capture & Scatter event*/
-                const bool isCaptureParticle =
-                    find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
-                const bool isScatterParticle =
-                    find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
-
-                const bool isCaptureDepositStep =
-                    (fEdep > 0.0) &&
-                    isCaptureParticle &&
-                    (string(fCProc) == "neutronInelastic");
-                const bool isScatterDepositStep =
-                    (fEdep > 0.0) &&
-                    isScatterParticle &&
-                    // isPrimaryNeutronSecondary &&
-                    (string(fCProc) == "hadElastic");
-
-                if (isCaptureDepositStep)
+                if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
                 {
-                    acc.cpEdepSum += fEdep;
-
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
-                    {
-                        acc.captureflag = true;
-                        acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
-                        acc.cpPosX = fPrePosX;
-                        acc.cpPosY = fPrePosY;
-                        acc.cpPosZ = fPrePosZ;
-                    }
+                    acc.captureflag = true;
+                    acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
+                    acc.cpPosX = fPrePosX;
+                    acc.cpPosY = fPrePosY;
+                    acc.cpPosZ = fPrePosZ;
                 }
+            }
 
-                if (isScatterDepositStep)
+            if (isScatterDepositStep)
+            {
+                acc.scEdepSum += fEdep;
+                if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
                 {
-                    acc.scEdepSum += fEdep;
-                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
-                    {
-                        acc.scatterflag = true;
-                        acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
-                        acc.scPosX = fPrePosX;
-                        acc.scPosY = fPrePosY;
-                        acc.scPosZ = fPrePosZ;
-                    }
+                    acc.scatterflag = true;
+                    acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
+                    acc.scPosX = fPrePosX;
+                    acc.scPosY = fPrePosY;
+                    acc.scPosZ = fPrePosZ;
                 }
             }
         }

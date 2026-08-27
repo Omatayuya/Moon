@@ -31,6 +31,7 @@
 #include "B2PrimaryGeneratorAction.hh"
 #include "B2RunAction.hh"
 #include "B2EventAction.hh"
+#include "B2SteppingAction.hh"
 
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
@@ -58,6 +59,7 @@ void B2ActionInitialization::Build() const
   SetUserAction(new B2PrimaryGeneratorAction);
   SetUserAction(new B2RunAction);
   SetUserAction(new B2EventAction);
+  SetUserAction(new B2SteppingAction);
 }  
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......

@@ -93,7 +93,17 @@ B2RunAction::B2RunAction()
   // analysisManager->CreateNtupleDColumn("StepLength");
   analysisManager->FinishNtuple();
 
-  // Ntuple 2: Run情報
+  analysisManager->CreateNtuple("CdCrossing", "virtual Cd plane crossings");
+  analysisManager->CreateNtupleIColumn("eventID");
+  analysisManager->CreateNtupleIColumn("trackID");
+  analysisManager->CreateNtupleIColumn("parentID");
+  analysisManager->CreateNtupleIColumn("planeID");
+  analysisManager->CreateNtupleDColumn("KinE");
+  analysisManager->CreateNtupleDColumn("MuZ");
+  analysisManager->CreateNtupleDColumn("GTime");
+  analysisManager->FinishNtuple();
+  
+  // Ntuple 3: Run情報
   fRunInfoNtupleId = analysisManager->CreateNtuple("RunInfo", "Run information");
   analysisManager->CreateNtupleDColumn(fRunInfoNtupleId, "TotalFlux");
   analysisManager->FinishNtuple(fRunInfoNtupleId);
