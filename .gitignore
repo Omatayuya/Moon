@@ -1,0 +1,38 @@
+# シミュレーション結果データ（重すぎるため対象外。バックアップは別手段で）
+*.root
+*.zip
+
+# ビルド成果物（CMake/Makefile生成物）
+build/
+bin/
+*.o
+*.so
+*.d
+*.pcm
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+
+# ROOT解析の副産物
+*_C.so
+*_C.d
+*_C_ACLiC_dict_rdict.pcm
+
+# OS/エディタ
+.DS_Store
+.vscode/
+
+# 解析結果（図表・データ点）— スクリプトから再生成可能なため対象外
+*.pdf
+**/analysis/fig/
+**/analysis/image/
+*.csv
+
+# Geant4 実行ログ・可視化出力
+*.out
+*.wrl
+
+# 自動生成される補助リスト
+folders.list

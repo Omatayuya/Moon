@@ -1,0 +1,17 @@
+### GeneralParticleSource
+/gps/particle proton
+#/gps/particle neutron
+
+/gps/pos/type Point
+/gps/pos/centre 0 0 2.2 m
+#/gps/pos/centre -100 4.1 900 mm
+
+#/gps/direction 0 0 -1
+/gps/direction 2 1 -0.1
+#/gps/ang/type iso
+#/gps/ang/mintheta 178.4 deg
+#/gps/ang/maxtheta 180 deg
+
+/gps/ene/type Mono
+/gps/ene/mono 1 GeV
+

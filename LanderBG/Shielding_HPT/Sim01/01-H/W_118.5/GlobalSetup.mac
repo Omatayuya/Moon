@@ -1,0 +1,18 @@
+## Set up primary generaotr
+#/control/execute primaryGeneratorSetup.mac
+/control/execute ../../../../macro/primaryGeneratorSetup_H_Matthia2013_W_118.5.mac
+#/control/execute primaryGeneratorSetup_radioactive.mac
+
+## Set up visulalization ennrionment
+#/control/execute visSetup.mac
+
+## Set up verbosity
+/control/execute ../../../../macro/verboseSetup.mac
+
+## Set up multithread
+#/control/cout/ignoreThreadsExcept 0
+
+## Invoke the application
+/run/printProgress 20000
+/run/beamOn 2000000
+
