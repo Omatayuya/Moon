@@ -267,7 +267,5 @@ G4int EventAction::ProcessID(G4String process)
 		// G4cout << "other process: " << process << G4endl;
 	}
 
-	std::cout << "Process: " << process << ", ID: " << id << std::endl;
-
 	return id;
 }
