@@ -35,6 +35,49 @@ using namespace std;
 
 void CountRate_To_WaterContent()
 {
+    // ==================================================================
+    // const Double_t irrArea = pow(450, 2);                    // irradiation surface area (cm^2) for Proton, Helium
+    const Double_t DetectorOffsetZ = 400; // Detector offset in Z (mm)
+    const Double_t irrArea = 600 * 600;   // irradiation surface area (cm^2) for Proton, Helium
+    const Double_t SDArea = 10 * 10;      // Sensitive detector area (cm^2)
+
+    // energy window
+    constexpr double scatterEdepLow = 1.0; // MeV
+    // constexpr double scatterEdepHigh = 3.0; // MeV
+    constexpr double captureEdepLow = 4.5; // MeV
+
+    // Thermal neutron cut (109Cd)
+    constexpr double TNEnergyCut = 5e-7; // MeV
+
+    // Primary energy bins
+    constexpr int nEBins = 4;
+    const double primEnergyEdges[nEBins + 1] = {0.0, 5e-7, 1e-3, 1.0, numeric_limits<double>::infinity()};
+    const TString primEnergyLabels[nEBins] = {"E < 0.5 eV", "0.5 eV #leq E < 1 keV", "1 keV #leq E < 1 MeV", "E #geq 1 MeV"};
+    const int primEnergyColors[nEBins] = {kOrange + 8, kGreen - 7, kGreen + 2, kBlue};
+
+    for (const TString &axis : {"X", "Y", "Z"})
+    {
+        gStyle->SetLabelFont(62, axis);
+        gStyle->SetTitleFont(62, axis);
+        if (axis == "Y")
+            gStyle->SetTitleOffset(1.4, axis); // 軸タイトルのオフセット
+        else
+            gStyle->SetTitleOffset(1.2, axis); // 軸タイトルのオフセット
+        gStyle->SetLabelSize(0.04, axis);      // 目盛り数字のサイズ
+        gStyle->SetTitleSize(0.04, axis);      // 軸タイトルのサイズ
+    }
+    gStyle->SetTextFont(62);
+    gStyle->SetTitleFont(62, "");
+
+    gStyle->SetPadGridX(true);
+    gStyle->SetPadGridY(true);
+    // gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);
+
+    gStyle->SetPadLeftMargin(0.15);
+
+    // ==================================================================
+
     vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
     // vector<TString> folder = {"0ppm"};
 
@@ -44,50 +87,6 @@ void CountRate_To_WaterContent()
 
     for (int folderID = 0; folderID < folder.size(); folderID++)
     {
-
-        // ==================================================================
-
-        const string TargetParticle = "neutron";
-        // const Double_t irrArea = pow(450, 2);                    // irradiation surface area (cm^2) for Proton, Helium
-        const Double_t DetectorOffsetZ = 400; // Detector offset in Z (mm)
-        const Double_t irrArea = 600 * 600;   // irradiation surface area (cm^2) for Proton, Helium
-
-        // energy window
-        constexpr double scatterEdepLow = 1.0; // MeV
-        // constexpr double scatterEdepHigh = 3.0; // MeV
-        constexpr double captureEdepLow = 4.5; // MeV
-
-        // Thermal neutron cut (109Cd)
-        constexpr double TNEnergyCut = 5e-7; // MeV
-
-        // Primary energy bins
-        constexpr int nEBins = 4;
-        const double primEnergyEdges[nEBins + 1] = {0.0, 5e-7, 1e-3, 1.0, numeric_limits<double>::infinity()};
-        const TString primEnergyLabels[nEBins] = {"E < 0.5 eV", "0.5 eV #leq E < 1 keV", "1 keV #leq E < 1 MeV", "E #geq 1 MeV"};
-        const int primEnergyColors[nEBins] = {kOrange + 8, kGreen - 7, kGreen + 2, kBlue};
-
-        for (const TString &axis : {"X", "Y", "Z"})
-        {
-            gStyle->SetLabelFont(62, axis);
-            gStyle->SetTitleFont(62, axis);
-            if (axis == "Y")
-                gStyle->SetTitleOffset(1.4, axis); // 軸タイトルのオフセット
-            else
-                gStyle->SetTitleOffset(1.2, axis); // 軸タイトルのオフセット
-            gStyle->SetLabelSize(0.04, axis);      // 目盛り数字のサイズ
-            gStyle->SetTitleSize(0.04, axis);      // 軸タイトルのサイズ
-        }
-        gStyle->SetTextFont(62);
-        gStyle->SetTitleFont(62, "");
-
-        gStyle->SetPadGridX(true);
-        gStyle->SetPadGridY(true);
-        // gStyle->SetPalette(kRainBow);
-        gStyle->SetOptStat(0);
-
-        gStyle->SetPadLeftMargin(0.15);
-
-        // ==================================================================
 
         TFile *fin = TFile::Open("../../" + folder[folderID] + "/results.root");
         if (fin)
@@ -331,7 +330,7 @@ void CountRate_To_WaterContent()
         TH2D *h2_scposXY = new TH2D("h2_scposXY", Form("Scatter Position XY Distribution;X (mm);Y (mm);Counts (s^{-1} %d #times %d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
 
         // vector<TH1F *> vH_cpposZ_byE(nEBins);
-        // for (int e = 0; e < nEBins; ++e)
+        // for (size_t e = 0; e < nEBins; ++e)
         // {
         //     TString hname = Form("h1_cpposZ_E%d", e);
         //     vH_cpposZ_byE[e] = new TH1F(hname,
@@ -388,24 +387,18 @@ void CountRate_To_WaterContent()
         vHistscPosZ.push_back(h1_scposZ);
     }
 
-    // Draw
-    /*Color Palette*/
-    gStyle->SetPalette(kBird);
-    int nColors = gStyle->GetNumberOfColors();
-    vector<Color_t> colorPalette;
-    for (int i = 0; i < vHistcpPosZ.size(); ++i)
-    {
-        colorPalette.push_back(gStyle->GetColorPalette(i * nColors / vHistcpPosZ.size()));
-    }
-
-    vector<TCanvas *> vCan;
     // === scatter/capture, scatter/capture_TNcut, capture/capture_TNcut vs 含水率 ===
-    double TNLayerRange[] = {0.0, 40.0};
+    double TNLayerRange[] = {0.0, 20.0};
     double ENLayerRange[] = {40.0, 120.0};
+    double TNlayerThickness = (TNLayerRange[1] - TNLayerRange[0]) * 0.1; // cm
+    double ENlayerThickness = (ENLayerRange[1] - ENLayerRange[0]) * 0.1; // cm
+    double scatterLayerThickness = TNlayerThickness + ENlayerThickness;  // cm
+
     vector<double> vPpm;
+    vector<double> vCp, vCpErr, vCpTNcut, vCpTNcutErr, vSc, vScErr;
     vector<double> vRatio_scCp, vRatio_scCpTNcut, vRatio_cpCpTNcut;
     vector<double> vRatio_scCpErr, vRatio_scCpTNcutErr, vRatio_cpCpTNcutErr;
-    for (int i = 0; i < vHistcpPosZ.size(); ++i)
+    for (size_t i = 0; i < vHistcpPosZ.size(); ++i)
     {
         int bin_TN_low = vHistcpPosZ[i]->GetXaxis()->FindBin(TNLayerRange[0]);
         int bin_TN_high = vHistcpPosZ[i]->GetXaxis()->FindBin(TNLayerRange[1]) - 1;
@@ -426,6 +419,20 @@ void CountRate_To_WaterContent()
         double ratio_cpCpTNcut = captureTNcutSum / captureSum;
         double ratio_cpCpTNcutErr = ratio_cpCpTNcut * sqrt(pow(captureErr / captureSum, 2) + pow(captureTNcutErr / captureTNcutSum, 2));
 
+        captureSum = captureSum / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
+        captureErr = captureErr / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
+        captureTNcutSum = captureTNcutSum / (ENlayerThickness * SDArea);
+        captureTNcutErr = captureTNcutErr / (ENlayerThickness * SDArea);
+        scatterSum = scatterSum / (scatterLayerThickness * SDArea);
+        scatterErr = scatterErr / (scatterLayerThickness * SDArea);
+
+        vCp.push_back(captureSum);
+        vCpErr.push_back(captureErr);
+        vCpTNcut.push_back(captureTNcutSum);
+        vCpTNcutErr.push_back(captureTNcutErr);
+        vSc.push_back(scatterSum);
+        vScErr.push_back(scatterErr);
+
         vRatio_scCp.push_back(captureSum / scatterSum);
         vRatio_scCpErr.push_back(ratio_scCpErr);
         vRatio_scCpTNcut.push_back(captureTNcutSum / scatterSum);
@@ -440,39 +447,73 @@ void CountRate_To_WaterContent()
         vPpm.push_back(ppmValue);
     }
 
+    // --- count rate vs H content (capture / capture_TNcut / scatter) ---
+    vector<vector<double> *> countRateY = {&vCp, &vCpTNcut, &vSc};
+    vector<vector<double> *> countRateYErr = {&vCpErr, &vCpTNcutErr, &vScErr};
+    vector<Color_t> countRateColor = {kRed + 1, kGreen + 2, kBlue + 1};
+    vector<TString> countRateLabel = {"Capture", "Capture_TNcut", "Scatter"};
+
+    TMultiGraph *mgCountRate = new TMultiGraph();
+    mgCountRate->SetTitle("Count rate vs H content;H content (ppm);Count rate (s^{-1} cm^{-3})");
+    mgCountRate->SetMinimum(0);
+    TLegend *legCountRate = new TLegend(0.20, 0.20, 0.4, 0.38);
+
+    for (size_t i = 0; i < countRateY.size(); ++i)
     {
-        // scatter/capture vs H content
-        TCanvas *cRatio_scCp = new TCanvas("cRatio_scCp", "Capture/Scatter vs H content", 800, 600);
-        cRatio_scCp->SetLogx();
-        TGraphErrors *grRatio_scCp = new TGraphErrors(vPpm.size(), vPpm.data(), vRatio_scCp.data(), 0, vRatio_scCpErr.data());
-        grRatio_scCp->SetTitle(Form("Capture / Scatter (Z %g-%g mm) vs H content;H content (ppm);Capture / Scatter", TNLayerRange[0], TNLayerRange[1]));
-        grRatio_scCp->SetMarkerStyle(20);
-        grRatio_scCp->SetMarkerColor(kBlue + 1);
-        grRatio_scCp->SetLineColor(kBlue + 1);
-        grRatio_scCp->Draw("APL");
-        vCan.push_back(cRatio_scCp);
+        TGraphErrors *gr = new TGraphErrors(vPpm.size(), vPpm.data(),
+                                            countRateY.at(i)->data(), 0, countRateYErr.at(i)->data());
+        gr->SetMarkerColor(countRateColor.at(i));
+        gr->SetLineColor(countRateColor.at(i));
+        gr->SetMarkerStyle(20);
+        mgCountRate->Add(gr, "PL");
+        legCountRate->AddEntry(gr, countRateLabel.at(i), "lp");
+    }
 
-        // scatter/capture_TNcut vs H content
-        TCanvas *cRatio_scCpTNcut = new TCanvas("cRatio_scCpTNcut", "Capture_TNcut/Scatter vs H content", 800, 600);
-        cRatio_scCpTNcut->SetLogx();
-        TGraphErrors *grRatio_scCpTNcut = new TGraphErrors(vPpm.size(), vPpm.data(), vRatio_scCpTNcut.data(), 0, vRatio_scCpTNcutErr.data());
-        grRatio_scCpTNcut->SetTitle(Form("Capture_TNcut / Scatter (Z %g-%g mm) vs H content;H content (ppm);Capture_TNcut / Scatter", ENLayerRange[0], ENLayerRange[1]));
-        grRatio_scCpTNcut->SetMarkerStyle(20);
-        grRatio_scCpTNcut->SetMarkerColor(kBlue + 1);
-        grRatio_scCpTNcut->SetLineColor(kBlue + 1);
-        grRatio_scCpTNcut->Draw("APL");
-        vCan.push_back(cRatio_scCpTNcut);
+    vector<TString> vCountRateRatioLabel = {"Capture / Scatter ", "Capture_TNcut / Scatter ", "Capture_TNcut  / Capture "};
+    vector<Color_t> vCountRateRatioColor = {kRed + 1, kGreen + 2, kOrange + 1};
+    vector<vector<double> *> vCountRateRatioY = {&vRatio_scCp, &vRatio_scCpTNcut, &vRatio_cpCpTNcut};
+    vector<vector<double> *> vCountRateRatioYErr = {&vRatio_scCpErr, &vRatio_scCpTNcutErr, &vRatio_cpCpTNcutErr};
 
-        // capture/capture_TNcut vs H content
-        TCanvas *cRatio_cpCpTNcut = new TCanvas("cRatio_cpCpTNcut", "Capture_TNcut/Capture vs H content", 800, 600);
-        cRatio_cpCpTNcut->SetLogx();
-        TGraphErrors *grRatio_cpCpTNcut = new TGraphErrors(vPpm.size(), vPpm.data(), vRatio_cpCpTNcut.data(), 0, vRatio_cpCpTNcutErr.data());
-        grRatio_cpCpTNcut->SetTitle(Form("Capture_TNcut (Z %g-%g mm) / Capture (Z %g-%g mm) vs H content;H content (ppm);Capture_TNcut / Capture", ENLayerRange[0], ENLayerRange[1], TNLayerRange[0], TNLayerRange[1]));
-        grRatio_cpCpTNcut->SetMarkerStyle(20);
-        grRatio_cpCpTNcut->SetMarkerColor(kBlue + 1);
-        grRatio_cpCpTNcut->SetLineColor(kBlue + 1);
-        grRatio_cpCpTNcut->Draw("APL");
-        vCan.push_back(cRatio_cpCpTNcut);
+    TMultiGraph *mgCountRateRatio = new TMultiGraph();
+    mgCountRateRatio->SetTitle("Count rate ratio vs H content;H content (ppm);Count rate ratio");
+    mgCountRateRatio->SetMinimum(0);
+    TLegend *legCountRateRatio = new TLegend(0.20, 0.60, 0.5, 0.78);
+
+    for (size_t i = 0; i < vCountRateRatioY.size(); ++i)
+    {
+        TGraphErrors *gr = new TGraphErrors(vPpm.size(), vPpm.data(),
+                                            vCountRateRatioY.at(i)->data(), 0, vCountRateRatioYErr.at(i)->data());
+        gr->SetMarkerColor(vCountRateRatioColor.at(i));
+        gr->SetLineColor(vCountRateRatioColor.at(i));
+        gr->SetMarkerStyle(20);
+        mgCountRateRatio->Add(gr, "PL");
+        legCountRateRatio->AddEntry(gr, vCountRateRatioLabel.at(i), "lp");
+    }
+
+    // Draw
+    /*Color Palette*/
+    gStyle->SetPalette(kBird);
+    int nColors = gStyle->GetNumberOfColors();
+    vector<Color_t> colorPalette;
+    for (size_t i = 0; i < vHistcpPosZ.size(); ++i)
+    {
+        colorPalette.push_back(gStyle->GetColorPalette(i * nColors / vHistcpPosZ.size()));
+    }
+    vector<TCanvas *> vCan;
+    {
+        // --- count rate vs H content ---
+        TCanvas *cCountRate = new TCanvas("cCountRate", "Count rate vs H content", 800, 600);
+        cCountRate->SetLogx();
+        mgCountRate->Draw("A");
+        legCountRate->Draw();
+        vCan.push_back(cCountRate);
+
+        // --- count rate ratio vs H content ---
+        TCanvas *cCountRateRatio = new TCanvas("cCountRateRatio", "Count rate ratio vs H content", 800, 600);
+        cCountRateRatio->SetLogx();
+        mgCountRateRatio->Draw("A");
+        legCountRateRatio->Draw();
+        vCan.push_back(cCountRateRatio);
     }
 
     // save PDF

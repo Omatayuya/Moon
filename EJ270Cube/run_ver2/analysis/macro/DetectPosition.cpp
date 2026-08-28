@@ -50,7 +50,8 @@ void DetectPosition()
         // energy window
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
-        constexpr double captureEdepLow = 4.5; // MeV
+        constexpr double captureEdepLow = 4.5;  // MeV
+        constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
@@ -84,6 +85,43 @@ void DetectPosition()
 
         TTree *HitTree = (TTree *)fin->Get("Hit");
         TTree *CdTree = (TTree *)fin->Get("CdCrossing"); // virtual Cd-plane crossings
+
+        /*Cd tree*/
+        map<pair<int, int>, map<int, double>> cdThermalCross;
+        if (CdTree)
+        {
+            int e, t, p;
+            double k, g;
+            CdTree->SetBranchAddress("eventID", &e);
+            CdTree->SetBranchAddress("trackID", &t);
+            CdTree->SetBranchAddress("planeID", &p);
+            CdTree->SetBranchAddress("KinE", &k);
+            CdTree->SetBranchAddress("GTime", &g);
+            const Long64_t nCd = CdTree->GetEntries();
+            for (Long64_t i = 0; i < nCd; ++i)
+            {
+                CdTree->GetEntry(i);
+                if (k >= TNEnergyCut)
+                    continue; // 熱中性子だけ
+                auto &m = cdThermalCross[{e, t}];
+                auto it = m.find(p);
+                if (it == m.end() || g < it->second)
+                    m[p] = g;
+            }
+        }
+
+        const set<int> cdImplemented = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100}; // ← ここだけ変えれば構成を切り替え
+
+        map<pair<int, int>, double> cdVeto; // (eventID,trackID) -> 吸収された時刻
+        for (auto &kv : cdThermalCross)
+        {
+            double tAbs = numeric_limits<double>::infinity();
+            for (auto &lm : kv.second)
+                if (cdImplemented.count(lm.first))
+                    tAbs = min(tAbs, lm.second);
+            if (isfinite(tAbs))
+                cdVeto[kv.first] = tAbs;
+        }
 
         /*Input ParticleData*/
         TTree *RunInfoTree = (TTree *)fin->Get("RunInfo");
@@ -214,6 +252,20 @@ void DetectPosition()
             if (string(collection) != "TrackerHitsCollection")
                 continue;
 
+            // --- Cd veto ---
+            if (!cdVeto.empty())
+            {
+                double tAbs = numeric_limits<double>::infinity();
+                auto a = cdVeto.find({eventID, fPID});  // このヒットが吸収された中性子自身
+                auto b = cdVeto.find({eventID, fPPID}); // その中性子の直接の二次粒子
+                if (a != cdVeto.end())
+                    tAbs = min(tAbs, a->second);
+                if (b != cdVeto.end())
+                    tAbs = min(tAbs, b->second);
+                if (fGTime >= tAbs)
+                    continue; // 吸収後のヒットは計算に含めない
+            }
+
             // double fEdepQ = 0.0;     // Initialize quenched energy deposit
             // const double kB = 0.012; // Birks' constant (mm/MeV)
             // const double S = 1.0;    // Scintillation efficiency
@@ -253,7 +305,7 @@ void DetectPosition()
             {
                 acc.cpEdepSum += fEdep;
 
-                if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
+                if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                 {
                     acc.captureflag = true;
                     acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
@@ -457,62 +509,6 @@ void DetectPosition()
             }
         }
 
-        /* ---------- Virtual Cd-plane crossings (CdCrossing tree) ----------
-         * planeID = depth from the detector front face [mm] (5,10,...,195),
-         *           i.e. already on the same axis as capturePosZ (cpPosZ - DetectorOffsetZ).
-         * KinE    = local kinetic energy of the neutron at the crossing [MeV].
-         * A thermal neutron can cross the same plane many times; we count each
-         * (eventID, trackID, plane) only once - the first crossing that meets the
-         * energy condition - so bouncing neutrons are not double counted.
-         *   h1_cdAllZ     : every neutron that reaches depth z          (all energies)
-         *   h1_cdThermalZ : neutrons that are thermal (KinE < cut) at z -> removed by a Cd sheet
-         *   h1_cdSurviveZ : h1_cdAllZ - h1_cdThermalZ                   -> left after the Cd sheet
-         *   h1_cdFracZ    : h1_cdThermalZ / h1_cdAllZ                   -> fractional drop per layer
-         * Rate histograms are per 5 mm layer (Scale 1/eqTime); divide by 100 cm^2
-         * (10x10 cm plane) if an areal current density is wanted instead.
-         */
-        TH1F *h1_cdAllZ = new TH1F("h1_cdAllZ",
-                                   Form("Virtual Cd-plane crossings (all energies);Depth Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ),
-                                   nBinsZ, minZ, maxZ);
-        TH1F *h1_cdThermalZ = new TH1F("h1_cdThermalZ",
-                                       Form("Virtual Cd-plane crossings (KinE < %.1f eV, absorbed by Cd);Depth Z (mm);Count rate (s^{-1} %d mm^{-1})", TNEnergyCut * 1e6, BinWidthZ),
-                                       nBinsZ, minZ, maxZ);
-        TH1F *h1_cdSurviveZ = new TH1F("h1_cdSurviveZ",
-                                       Form("Virtual Cd-plane crossings (KinE #geq %.1f eV, survives Cd);Depth Z (mm);Count rate (s^{-1} %d mm^{-1})", TNEnergyCut * 1e6, BinWidthZ),
-                                       nBinsZ, minZ, maxZ);
-
-        int cdEventID, cdTrackID, cdPlaneID;
-        double cdKinE;
-        CdTree->SetBranchAddress("eventID", &cdEventID);
-        CdTree->SetBranchAddress("trackID", &cdTrackID);
-        CdTree->SetBranchAddress("planeID", &cdPlaneID);
-        CdTree->SetBranchAddress("KinE", &cdKinE);
-
-        set<tuple<int, int, int>> cdCrossedAny;     // (event, track, plane) with >= 1 crossing
-        set<tuple<int, int, int>> cdCrossedThermal; //   ...   with >= 1 crossing at KinE < cut
-
-        const Long64_t nCd = CdTree->GetEntries();
-        for (Long64_t i = 0; i < nCd; ++i)
-        {
-            CdTree->GetEntry(i);
-            auto key = make_tuple(cdEventID, cdTrackID, cdPlaneID);
-            cdCrossedAny.insert(key);
-            if (cdKinE < TNEnergyCut)
-                cdCrossedThermal.insert(key);
-        }
-
-        for (const auto &key : cdCrossedAny)
-            h1_cdAllZ->Fill(get<2>(key));
-        for (const auto &key : cdCrossedThermal)
-            h1_cdThermalZ->Fill(get<2>(key));
-
-        h1_cdSurviveZ->Add(h1_cdAllZ);
-        h1_cdSurviveZ->Add(h1_cdThermalZ, -1.0);
-
-        h1_cdAllZ->Scale(1.0 / eqTime);
-        h1_cdThermalZ->Scale(1.0 / eqTime);
-        h1_cdSurviveZ->Scale(1.0 / eqTime);
-
         // Draw
         vector<TCanvas *> vCan;
         {
@@ -571,28 +567,6 @@ void DetectPosition()
         }
         legE->Draw();
         vCan.push_back(cCpposZByE);
-
-        // Virtual Cd-plane crossings vs depth
-        {
-            TCanvas *cCdCrossingZ = new TCanvas("cCdCrossingZ", "Virtual Cd-plane crossings vs depth", 800, 600);
-            gPad->SetGridx();
-            gPad->SetGridy();
-            h1_cdAllZ->SetLineColor(kBlack);
-            h1_cdThermalZ->SetLineColor(kAzure + 1);
-            h1_cdSurviveZ->SetLineColor(kRed + 1);
-            double cdYMax = max({h1_cdAllZ->GetMaximum(), h1_cdThermalZ->GetMaximum(), h1_cdSurviveZ->GetMaximum()});
-            h1_cdAllZ->SetMinimum(0);
-            h1_cdAllZ->SetMaximum(cdYMax * 1.3);
-            h1_cdAllZ->Draw("HIST E");
-            h1_cdSurviveZ->Draw("HIST E SAME");
-            h1_cdThermalZ->Draw("HIST E SAME");
-            TLegend *legCd = new TLegend(0.5, 0.7, 0.88, 0.88);
-            legCd->AddEntry(h1_cdAllZ, "All crossings", "l");
-            legCd->AddEntry(h1_cdThermalZ, Form("KinE < %.1f eV (absorbed by Cd)", TNEnergyCut * 1e6), "l");
-            legCd->AddEntry(h1_cdSurviveZ, Form("KinE #geq %.1f eV (survives Cd)", TNEnergyCut * 1e6), "l");
-            legCd->Draw();
-            vCan.push_back(cCdCrossingZ);
-        }
 
         for (int i = 0; i < vvHist.size(); ++i)
         {
