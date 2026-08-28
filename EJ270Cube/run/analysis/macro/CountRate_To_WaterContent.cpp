@@ -389,7 +389,7 @@ void CountRate_To_WaterContent()
 
     // === scatter/capture, scatter/capture_TNcut, capture/capture_TNcut vs 含水率 ===
     double TNLayerRange[] = {0.0, 20.0};
-    double ENLayerRange[] = {40.0, 120.0};
+    double ENLayerRange[] = {40.0, 160.0};
     double TNlayerThickness = (TNLayerRange[1] - TNLayerRange[0]) * 0.1; // cm
     double ENlayerThickness = (ENLayerRange[1] - ENLayerRange[0]) * 0.1; // cm
     double scatterLayerThickness = TNlayerThickness + ENlayerThickness;  // cm
@@ -419,19 +419,19 @@ void CountRate_To_WaterContent()
         double ratio_cpCpTNcut = captureTNcutSum / captureSum;
         double ratio_cpCpTNcutErr = ratio_cpCpTNcut * sqrt(pow(captureErr / captureSum, 2) + pow(captureTNcutErr / captureTNcutSum, 2));
 
-        captureSum = captureSum / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
-        captureErr = captureErr / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
-        captureTNcutSum = captureTNcutSum / (ENlayerThickness * SDArea);
-        captureTNcutErr = captureTNcutErr / (ENlayerThickness * SDArea);
-        scatterSum = scatterSum / (scatterLayerThickness * SDArea);
-        scatterErr = scatterErr / (scatterLayerThickness * SDArea);
+        double captureSumRate = captureSum / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
+        double captureErrRate = captureErr / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
+        double captureTNcutSumRate = captureTNcutSum / (ENlayerThickness * SDArea);
+        double captureTNcutErrRate = captureTNcutErr / (ENlayerThickness * SDArea);
+        double scatterSumRate = scatterSum / (scatterLayerThickness * SDArea);
+        double scatterErrRate = scatterErr / (scatterLayerThickness * SDArea);
 
-        vCp.push_back(captureSum);
-        vCpErr.push_back(captureErr);
-        vCpTNcut.push_back(captureTNcutSum);
-        vCpTNcutErr.push_back(captureTNcutErr);
-        vSc.push_back(scatterSum);
-        vScErr.push_back(scatterErr);
+        vCp.push_back(captureSumRate);
+        vCpErr.push_back(captureErrRate);
+        vCpTNcut.push_back(captureTNcutSumRate);
+        vCpTNcutErr.push_back(captureTNcutErrRate);
+        vSc.push_back(scatterSumRate);
+        vScErr.push_back(scatterErrRate);
 
         vRatio_scCp.push_back(captureSum / scatterSum);
         vRatio_scCpErr.push_back(ratio_scCpErr);
@@ -458,6 +458,11 @@ void CountRate_To_WaterContent()
     mgCountRate->SetMinimum(0);
     TLegend *legCountRate = new TLegend(0.20, 0.20, 0.4, 0.38);
 
+    size_t iZero = std::distance(vPpm.begin(), std::find(vPpm.begin(), vPpm.end(), 0.0));
+    TMultiGraph *mgCountRate_0ppmRatio = new TMultiGraph();
+    mgCountRate_0ppmRatio->SetTitle("Count rate (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ");
+    TLegend *legCountRate_0ppmRatio = new TLegend(0.20, 0.20, 0.4, 0.38);
+
     for (size_t i = 0; i < countRateY.size(); ++i)
     {
         TGraphErrors *gr = new TGraphErrors(vPpm.size(), vPpm.data(),
@@ -467,17 +472,38 @@ void CountRate_To_WaterContent()
         gr->SetMarkerStyle(20);
         mgCountRate->Add(gr, "PL");
         legCountRate->AddEntry(gr, countRateLabel.at(i), "lp");
+
+        // --- 0 ppm で規格化 ---
+        vector<double> &y = *countRateY.at(i);
+        vector<double> &yErr = *countRateYErr.at(i);
+        double y0 = y.at(iZero), y0Err = yErr.at(iZero);
+        vector<double> yNorm(y.size()), yNormErr(y.size());
+        for (size_t j = 0; j < y.size(); ++j)
+        {
+            yNorm.at(j) = y.at(j) / y0;
+            yNormErr.at(j) = yNorm.at(j) * sqrt(pow(yErr.at(j) / y.at(j), 2) + pow(y0Err / y0, 2));
+        }
+        TGraphErrors *grNorm = new TGraphErrors(vPpm.size(), vPpm.data(), yNorm.data(), 0, yNormErr.data());
+        grNorm->SetMarkerColor(countRateColor.at(i));
+        grNorm->SetLineColor(countRateColor.at(i));
+        grNorm->SetMarkerStyle(20);
+        mgCountRate_0ppmRatio->Add(grNorm, "PL");
+        legCountRate_0ppmRatio->AddEntry(grNorm, countRateLabel.at(i), "lp");
     }
 
     vector<TString> vCountRateRatioLabel = {"Capture / Scatter ", "Capture_TNcut / Scatter ", "Capture_TNcut  / Capture "};
-    vector<Color_t> vCountRateRatioColor = {kRed + 1, kGreen + 2, kOrange + 1};
+    vector<Color_t> vCountRateRatioColor = {kPink - 1, kSpring - 1, kOrange + 1};
     vector<vector<double> *> vCountRateRatioY = {&vRatio_scCp, &vRatio_scCpTNcut, &vRatio_cpCpTNcut};
     vector<vector<double> *> vCountRateRatioYErr = {&vRatio_scCpErr, &vRatio_scCpTNcutErr, &vRatio_cpCpTNcutErr};
 
     TMultiGraph *mgCountRateRatio = new TMultiGraph();
     mgCountRateRatio->SetTitle("Count rate ratio vs H content;H content (ppm);Count rate ratio");
     mgCountRateRatio->SetMinimum(0);
-    TLegend *legCountRateRatio = new TLegend(0.20, 0.60, 0.5, 0.78);
+    TLegend *legCountRateRatio = new TLegend(0.20, 0.50, 0.5, 0.68);
+
+    TMultiGraph *mgCountRateRatio_0ppmRatio = new TMultiGraph();
+    mgCountRateRatio_0ppmRatio->SetTitle("Count rate ratio (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ratio ");
+    TLegend *legCountRateRatio_0ppmRatio = new TLegend(0.20, 0.50, 0.5, 0.68);
 
     for (size_t i = 0; i < vCountRateRatioY.size(); ++i)
     {
@@ -488,6 +514,22 @@ void CountRate_To_WaterContent()
         gr->SetMarkerStyle(20);
         mgCountRateRatio->Add(gr, "PL");
         legCountRateRatio->AddEntry(gr, vCountRateRatioLabel.at(i), "lp");
+        // --- 0 ppm で規格化 ---
+        vector<double> &y = *vCountRateRatioY.at(i);
+        vector<double> &yErr = *vCountRateRatioYErr.at(i);
+        double y0 = y.at(iZero), y0Err = yErr.at(iZero);
+        vector<double> yNorm(y.size()), yNormErr(y.size());
+        for (size_t j = 0; j < y.size(); ++j)
+        {
+            yNorm.at(j) = y.at(j) / y0;
+            yNormErr.at(j) = yNorm.at(j) * sqrt(pow(yErr.at(j) / y.at(j), 2) + pow(y0Err / y0, 2));
+        }
+        TGraphErrors *grNorm = new TGraphErrors(vPpm.size(), vPpm.data(), yNorm.data(), 0, yNormErr.data());
+        grNorm->SetMarkerColor(vCountRateRatioColor.at(i));
+        grNorm->SetLineColor(vCountRateRatioColor.at(i));
+        grNorm->SetMarkerStyle(20);
+        mgCountRateRatio_0ppmRatio->Add(grNorm, "PL");
+        legCountRateRatio_0ppmRatio->AddEntry(grNorm, vCountRateRatioLabel.at(i), "lp");
     }
 
     // Draw
@@ -504,16 +546,34 @@ void CountRate_To_WaterContent()
         // --- count rate vs H content ---
         TCanvas *cCountRate = new TCanvas("cCountRate", "Count rate vs H content", 800, 600);
         cCountRate->SetLogx();
+        mgCountRate->SetMinimum(0);
         mgCountRate->Draw("A");
         legCountRate->Draw();
         vCan.push_back(cCountRate);
 
+        // --- count rate (normalized to 0 ppm) vs H content ---
+        TCanvas *cCountRate_0ppmRatio = new TCanvas("cCountRate_0ppmRatio", "Count rate (normalized to 0 ppm) vs H content", 800, 600);
+        cCountRate_0ppmRatio->SetLogx();
+        mgCountRate_0ppmRatio->SetMinimum(0);
+        mgCountRate_0ppmRatio->Draw("A");
+        legCountRate_0ppmRatio->Draw();
+        vCan.push_back(cCountRate_0ppmRatio);
+
         // --- count rate ratio vs H content ---
         TCanvas *cCountRateRatio = new TCanvas("cCountRateRatio", "Count rate ratio vs H content", 800, 600);
         cCountRateRatio->SetLogx();
+        mgCountRateRatio->SetMinimum(0);
         mgCountRateRatio->Draw("A");
         legCountRateRatio->Draw();
         vCan.push_back(cCountRateRatio);
+
+        // --- count rate ratio (normalized to 0 ppm) vs H content ---
+        TCanvas *cCountRateRatio_0ppmRatio = new TCanvas("cCountRateRatio_0ppmRatio", "Count rate ratio (normalized to 0 ppm) vs H content", 800, 600);
+        cCountRateRatio_0ppmRatio->SetLogx();
+        mgCountRateRatio_0ppmRatio->SetMinimum(0);
+        mgCountRateRatio_0ppmRatio->Draw("A");
+        legCountRateRatio_0ppmRatio->Draw();
+        vCan.push_back(cCountRateRatio_0ppmRatio);
     }
 
     // save PDF
