@@ -55,6 +55,9 @@ void CountRate_To_WaterContent()
     const TString primEnergyLabels[nEBins] = {"E < 0.5 eV", "0.5 eV #leq E < 1 keV", "1 keV #leq E < 1 MeV", "E #geq 1 MeV"};
     const int primEnergyColors[nEBins] = {kOrange + 8, kGreen - 7, kGreen + 2, kBlue};
 
+    // Sensitivity (0 ppm vs X ppm)
+    const double nSigma = 5.0; // 要求する分離有意度 (σ)
+
     for (const TString &axis : {"X", "Y", "Z"})
     {
         gStyle->SetLabelFont(62, axis);
@@ -84,6 +87,7 @@ void CountRate_To_WaterContent()
     vector<TH1F *> vHistcpPosZ;
     vector<TH1F *> vHistcpPosZ_TNcut;
     vector<TH1F *> vHistscPosZ;
+    vector<double> vEqTime;
 
     for (int folderID = 0; folderID < folder.size(); folderID++)
     {
@@ -132,6 +136,7 @@ void CountRate_To_WaterContent()
         TH1F *hPrimEnergy = (TH1F *)fin->Get("hPrimEnergy");
         int nEvents = hPrimEnergy->GetEntries();
         const Double_t eqTime = nEvents / (irrArea * MoonNeutronFlux);
+        vEqTime.push_back(eqTime);
 
         cout << "Total number of events in InputDataTree: " << nEvents << endl;
         cout << "Equivalent time: " << eqTime << " s" << endl;
@@ -393,6 +398,9 @@ void CountRate_To_WaterContent()
     double TNlayerThickness = (TNLayerRange[1] - TNLayerRange[0]) * 0.1; // cm
     double ENlayerThickness = (ENLayerRange[1] - ENLayerRange[0]) * 0.1; // cm
     double scatterLayerThickness = TNlayerThickness + ENlayerThickness;  // cm
+    double captureToRate = 1 / (TNlayerThickness * SDArea);              // cm^-1 cm^-2
+    double captureTNcutToRate = 1 / (ENlayerThickness * SDArea);         // cm^-1 cm^-2
+    double scatterToRate = 1 / (scatterLayerThickness * SDArea);         // cm^-1 cm^-2
 
     vector<double> vPpm;
     vector<double> vCp, vCpErr, vCpTNcut, vCpTNcutErr, vSc, vScErr;
@@ -412,32 +420,32 @@ void CountRate_To_WaterContent()
         double captureTNcutErr = 0;
         double captureTNcutSum = vHistcpPosZ_TNcut[i]->IntegralAndError(bin_EN_low, bin_EN_high, captureTNcutErr); // Z = 40-120 mm
 
-        double ratio_scCp = captureSum / scatterSum;
-        double ratio_scCpErr = ratio_scCp * sqrt(pow(scatterErr / scatterSum, 2) + pow(captureErr / captureSum, 2));
-        double ratio_scCpTNcut = captureTNcutSum / scatterSum;
-        double ratio_scCpTNcutErr = ratio_scCpTNcut * sqrt(pow(scatterErr / scatterSum, 2) + pow(captureTNcutErr / captureTNcutSum, 2));
-        double ratio_cpCpTNcut = captureTNcutSum / captureSum;
-        double ratio_cpCpTNcutErr = ratio_cpCpTNcut * sqrt(pow(captureErr / captureSum, 2) + pow(captureTNcutErr / captureTNcutSum, 2));
+        double captureRate = captureSum * captureToRate;
+        double captureErrRate = captureErr * captureToRate;
+        double captureTNcutRate = captureTNcutSum * captureTNcutToRate;
+        double captureTNcutErrRate = captureTNcutErr * captureTNcutToRate;
+        double scatterRate = scatterSum * scatterToRate;
+        double scatterErrRate = scatterErr * scatterToRate;
 
-        double captureSumRate = captureSum / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
-        double captureErrRate = captureErr / (TNlayerThickness * SDArea); // s^-1 cm^-1 cm^-2
-        double captureTNcutSumRate = captureTNcutSum / (ENlayerThickness * SDArea);
-        double captureTNcutErrRate = captureTNcutErr / (ENlayerThickness * SDArea);
-        double scatterSumRate = scatterSum / (scatterLayerThickness * SDArea);
-        double scatterErrRate = scatterErr / (scatterLayerThickness * SDArea);
-
-        vCp.push_back(captureSumRate);
+        vCp.push_back(captureRate);
         vCpErr.push_back(captureErrRate);
-        vCpTNcut.push_back(captureTNcutSumRate);
+        vCpTNcut.push_back(captureTNcutRate);
         vCpTNcutErr.push_back(captureTNcutErrRate);
-        vSc.push_back(scatterSumRate);
+        vSc.push_back(scatterRate);
         vScErr.push_back(scatterErrRate);
 
-        vRatio_scCp.push_back(captureSum / scatterSum);
+        double ratio_scCp = captureRate / scatterRate;
+        double ratio_scCpErr = ratio_scCp * sqrt(pow(scatterErrRate / scatterRate, 2) + pow(captureErrRate / captureRate, 2));
+        double ratio_scCpTNcut = captureTNcutRate / scatterRate;
+        double ratio_scCpTNcutErr = ratio_scCpTNcut * sqrt(pow(scatterErrRate / scatterRate, 2) + pow(captureTNcutErrRate / captureTNcutRate, 2));
+        double ratio_cpCpTNcut = captureTNcutRate / captureRate;
+        double ratio_cpCpTNcutErr = ratio_cpCpTNcut * sqrt(pow(captureErrRate / captureRate, 2) + pow(captureTNcutErrRate / captureTNcutRate, 2));
+
+        vRatio_scCp.push_back(ratio_scCp);
         vRatio_scCpErr.push_back(ratio_scCpErr);
-        vRatio_scCpTNcut.push_back(captureTNcutSum / scatterSum);
+        vRatio_scCpTNcut.push_back(ratio_scCpTNcut);
         vRatio_scCpTNcutErr.push_back(ratio_scCpTNcutErr);
-        vRatio_cpCpTNcut.push_back(captureTNcutSum / captureSum);
+        vRatio_cpCpTNcut.push_back(ratio_cpCpTNcut);
         vRatio_cpCpTNcutErr.push_back(ratio_cpCpTNcutErr);
 
         // Extract ppm value from folder name
@@ -532,6 +540,75 @@ void CountRate_To_WaterContent()
         legCountRateRatio_0ppmRatio->AddEntry(grNorm, vCountRateRatioLabel.at(i), "lp");
     }
 
+    // === 0 ppm と各 ppm を Nσ で分離するために必要な観測時間 vs 体積 ===
+    const double volumeStart = 100.0; // cm^3
+    const double volumeStep = 50.0;   // cm^3
+    const double volumeEnd = 1000.0;  // cm^3
+    vector<double> vVolume;
+    for (double volume = volumeStart; volume <= volumeEnd; volume += volumeStep)
+    {
+        vVolume.push_back(volume);
+    }
+    const int nVolumePoints = vVolume.size();
+
+    vector<Color_t> vSigTimePpmColor;
+    for (size_t j = 0; j < vPpm.size(); ++j)
+    {
+        vSigTimePpmColor.push_back(gStyle->GetColorPalette(j * gStyle->GetNumberOfColors() / vPpm.size()));
+    }
+
+    vector<TString> vSigTimeLabel = {"Capture / Scatter", "Capture_TNcut / Scatter", "Capture_TNcut / Capture"};
+    vector<vector<double> *> vSigTimeRatioY = {&vRatio_scCp, &vRatio_scCpTNcut, &vRatio_cpCpTNcut};
+    vector<vector<double> *> vSigTimeRateNumer = {&vCp, &vCpTNcut, &vCpTNcut}; // 各ratioの分子レート
+    vector<vector<double> *> vSigTimeRateDenom = {&vSc, &vSc, &vCp};           // 各ratioの分母レート
+
+    vector<TMultiGraph *> vMgSigTime;
+    vector<TLegend *> vLegSigTime;
+
+    for (size_t i = 0; i < vSigTimeLabel.size(); ++i)
+    {
+        TMultiGraph *mgSigTime = new TMultiGraph();
+        mgSigTime->SetTitle(Form("Observation time for %.0f#sigma separation vs 0 ppm (%s);Volume (cm^{3});Observation time (s)", nSigma, vSigTimeLabel.at(i).Data()));
+        TLegend *legSigTime = new TLegend(0.55, 0.70, 0.85, 0.88);
+        legSigTime->SetNColumns(2);
+
+        for (size_t j = 0; j < vPpm.size(); ++j)
+        {
+            if (j == iZero)
+                continue;
+
+            double ratio0 = vSigTimeRatioY.at(i)->at(iZero);
+            double rateNumer0 = vSigTimeRateNumer.at(i)->at(iZero);
+            double rateDenom0 = vSigTimeRateDenom.at(i)->at(iZero);
+            double ratioX = vSigTimeRatioY.at(i)->at(j);
+            double rateNumerX = vSigTimeRateNumer.at(i)->at(j);
+            double rateDenomX = vSigTimeRateDenom.at(i)->at(j);
+
+            // captureRate/scatterRate等を真の値と仮定し、体積V・観測時間Tでのポアソン統計を
+            // その都度作り直す（過去のMC統計量eqTimeは引き継がない）
+            double delta = fabs(ratioX - ratio0);
+            double C0 = pow(ratio0, 2) * (1.0 / rateDenom0 + 1.0 / rateNumer0); // ratioErr(V,T)^2 = C0 / (V*T)
+            double CX = pow(ratioX, 2) * (1.0 / rateDenomX + 1.0 / rateNumerX);
+            double time1cm3 = pow(nSigma, 2) * (C0 + CX) / pow(delta, 2); // 1 cm^3 での必要観測時間 (s)
+
+            vector<double> vTime(nVolumePoints);
+            for (int v = 0; v < nVolumePoints; ++v)
+            {
+                vTime.at(v) = time1cm3 / vVolume.at(v); // 観測時間は体積に反比例
+            }
+
+            TGraph *gr = new TGraph(nVolumePoints, vVolume.data(), vTime.data());
+            gr->SetMarkerColor(vSigTimePpmColor.at(j));
+            gr->SetLineColor(vSigTimePpmColor.at(j));
+            gr->SetMarkerStyle(20 + j);
+            mgSigTime->Add(gr, "PL");
+            legSigTime->AddEntry(gr, folder.at(j), "lp");
+        }
+
+        vMgSigTime.push_back(mgSigTime);
+        vLegSigTime.push_back(legSigTime);
+    }
+
     // Draw
     /*Color Palette*/
     gStyle->SetPalette(kBird);
@@ -574,6 +651,31 @@ void CountRate_To_WaterContent()
         mgCountRateRatio_0ppmRatio->Draw("A");
         legCountRateRatio_0ppmRatio->Draw();
         vCan.push_back(cCountRateRatio_0ppmRatio);
+
+        // --- observation time vs volume (0 ppm vs each ppm, Nσ separation), 比率ごとに別キャンバス ---
+        for (size_t i = 0; i < vMgSigTime.size(); ++i)
+        {
+            TCanvas *cSigTime = new TCanvas(Form("cSigTime_%zu", i), vSigTimeLabel.at(i), 800, 600);
+            cSigTime->SetGridx(0);
+            cSigTime->SetGridy(0);
+            gPad->SetLogy();
+            vMgSigTime.at(i)->Draw("A");
+            vLegSigTime.at(i)->Draw();
+            vCan.push_back(cSigTime);
+
+            vector<double> vTime{60, 3600, 3600 * 24, 3600 * 24 * 7};
+            vector<TString> vText{"1m", "1h", "1d", "1w"};
+            for (size_t k = 0; k < vTime.size(); ++k)
+            {
+                TLine *l = new TLine(volumeStart, vTime[k], volumeEnd, vTime[k]);
+                l->SetLineColor(kGray + 1);
+                l->SetLineStyle(kDashed);
+                l->Draw();
+
+                TText *t = new TText(volumeStart + 10, vTime[k] * 0.5, vText[k]);
+                t->Draw();
+            }
+        }
     }
 
     // save PDF
