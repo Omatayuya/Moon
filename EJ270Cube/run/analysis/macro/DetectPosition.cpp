@@ -52,6 +52,7 @@ void DetectPosition()
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
         constexpr double captureEdepLow = 4.5; // MeV
+        constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
@@ -263,7 +264,7 @@ void DetectPosition()
                 {
                     acc.cpEdepSum += fEdep;
 
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
+                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                     {
                         acc.captureflag = true;
                         acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
@@ -567,11 +568,11 @@ void DetectPosition()
             vH1_cpposE_byZ[z]->Scale(1.0 / (10 * thickness)); // 厚みで割って単位をs^-1 mm^-1に変換
             yMaxEZ = max(yMaxEZ, vH1_cpposE_byZ[z]->GetMaximum());
         }
-        TLegend *legEZ = new TLegend(0.55, 0.6, 0.88, 0.88);
+        TLegend *legEZ = new TLegend(0.55, 0.7, 0.88, 0.88);
         for (int z = 0; z < nZProjRegions; ++z)
         {
             vH1_cpposE_byZ[z]->SetMaximum(yMaxEZ * 1.5);
-            vH1_cpposE_byZ[z]->SetMinimum(1e-5);
+            vH1_cpposE_byZ[z]->SetMinimum(1e-4);
             vH1_cpposE_byZ[z]->Draw(z == 0 ? "HIST" : "HIST SAME");
             legEZ->AddEntry(vH1_cpposE_byZ[z], zProjLabels[z], "l");
         }

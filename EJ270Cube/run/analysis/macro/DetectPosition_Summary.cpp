@@ -56,6 +56,7 @@ void DetectPosition_Summary()
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
         constexpr double captureEdepLow = 4.5; // MeV
+        constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
@@ -280,7 +281,7 @@ void DetectPosition_Summary()
                 {
                     acc.cpEdepSum += fEdep;
 
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
+                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                     {
                         acc.captureflag = true;
                         acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);

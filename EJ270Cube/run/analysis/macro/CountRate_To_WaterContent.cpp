@@ -541,9 +541,9 @@ void CountRate_To_WaterContent()
     }
 
     // === 0 ppm と各 ppm を Nσ で分離するために必要な観測時間 vs 体積 ===
-    const double volumeStart = 100.0; // cm^3
-    const double volumeStep = 50.0;   // cm^3
-    const double volumeEnd = 1000.0;  // cm^3
+    const double volumeStart = 30.0; // cm^3
+    const double volumeStep = 30.0;   // cm^3
+    const double volumeEnd = 500.0;  // cm^3
     vector<double> vVolume;
     for (double volume = volumeStart; volume <= volumeEnd; volume += volumeStep)
     {
@@ -608,6 +608,9 @@ void CountRate_To_WaterContent()
         vMgSigTime.push_back(mgSigTime);
         vLegSigTime.push_back(legSigTime);
     }
+
+    constexpr Double_t xmin = 5;    // H (ppm)
+    constexpr Double_t xmax = 2e+4; // H (ppm)
 
     // Draw
     /*Color Palette*/

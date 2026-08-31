@@ -52,11 +52,12 @@ void DetectPosition_Cdfilm()
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
         constexpr double captureEdepLow = 4.5; // MeV
+        constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
 
-        vector<double> cdPlanePosXY = {10 + DetectorOffsetZ, 20 + DetectorOffsetZ, 160 + DetectorOffsetZ, 200 + DetectorOffsetZ};    // XY平面 (法線: Z軸) の位置 [mm]
+        vector<double> cdPlanePosXY = {10 + DetectorOffsetZ, 20 + DetectorOffsetZ, 160 + DetectorOffsetZ,};    // XY平面 (法線: Z軸) の位置 [mm]
         vector<double> cdPlanePosZX = {-50, -30, 30, 50}; // ZX平面 (法線: Y軸) の位置 [mm]
         vector<double> cdPlanePosZY = {-50, -30, 30, 50}; // ZY平面 (法線: X軸) の位置 [mm]
 
@@ -304,7 +305,7 @@ void DetectPosition_Cdfilm()
                 {
                     acc.cpEdepSum += fEdep;
 
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
+                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                     {
                         acc.captureflag = true;
                         acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
@@ -379,7 +380,7 @@ void DetectPosition_Cdfilm()
         }
 
         // Z region bins for capture energy spectra (projected onto energy axis)
-        vector<double> zProjEdges = {0, 5, 10, 20, 40, 160, 200};
+        vector<double> zProjEdges = {0, 10, 20, 160, 200};
         const int nZProjRegions = zProjEdges.size() - 1;
         vector<TString> zProjLabels;
         for (int z = 0; z < nZProjRegions; ++z)
@@ -601,7 +602,7 @@ void DetectPosition_Cdfilm()
 
         TCanvas *cCpposEByZ = new TCanvas("cCpposEByZ", "Capture Energy Spectrum by Z Region", 800, 600);
         gPad->SetLogx();
-        // gPad->SetLogy();
+        gPad->SetLogy();
         double yMaxEZ = 0;
         for (int z = 0; z < nZProjRegions; ++z)
         {
