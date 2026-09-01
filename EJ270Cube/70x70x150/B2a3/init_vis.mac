@@ -1,0 +1,25 @@
+# Macro file for the initialization of example B2 
+# in interactive session
+#
+# Set some default verbose
+/control/verbose 2
+/control/saveHistory
+/run/verbose 2
+#
+# Change the default number of threads (in multi-threaded mode)
+/run/numberOfThreads 4
+#
+#Atomic Deexcitation#yk
+/process/em/fluo true
+/process/em/auger true
+/process/em/augerCascade true
+/process/em/pixe true
+#Lower Energy Threshold#yk
+/cuts/setLowEdge 250 eV
+/process/em/deexcitationIgnoreCut true 
+#
+# Initialize kernel
+/run/initialize
+#
+# Visualization setting
+/control/execute vis.mac

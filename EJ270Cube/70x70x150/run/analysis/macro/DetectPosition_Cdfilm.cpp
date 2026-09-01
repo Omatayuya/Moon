@@ -387,7 +387,6 @@ void DetectPosition_Cdfilm()
             vH_cpposZ_byE[e] = new TH1F(hname,
                                         Form("Capture Position Z (%s);Z (mm);Count rate (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
                                         nBinsZ, minZ, maxZ);
-            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
         }
 
         // Z region bins for capture energy spectra (projected onto energy axis)
@@ -411,7 +410,7 @@ void DetectPosition_Cdfilm()
         }
 
         // Z region bins for capture XY histograms
-        vector<double> zRegionEdges = {0, 5, 10, 20, 40, 60, 70, 75, 80, 160, 200};
+        vector<double> zRegionEdges = {0, 40, 160, 200};
         const int nZRegions = zRegionEdges.size() - 1;
         vector<TString> zRegionLabels;
         for (int z = 0; z < nZRegions; ++z)
@@ -467,14 +466,6 @@ void DetectPosition_Cdfilm()
         using HistLegPair = pair<TH1 *, TString>;
         vector<vector<HistLegPair>> vvHist;
         vvHist.push_back({{h2_cpposZ, "Capture Position Z"}});
-        {
-            h1_cpposZ->SetLineColor(kBlack);
-            vector<HistLegPair> group;
-            group.push_back({h1_cpposZ, "Total"});
-            for (int e = 0; e < nEBins; ++e)
-                group.push_back({vH_cpposZ_byE[e], primEnergyLabels[e]});
-            vvHist.push_back(group);
-        }
         vvHist.push_back({{h2_cpposXY, "Capture Position XY"}});
         for (int z = 0; z < nZRegions; ++z)
         {
@@ -595,6 +586,30 @@ void DetectPosition_Cdfilm()
             vCan.push_back(c1);
         }
 
+        TCanvas *cCpposZByE = new TCanvas("cCpposZByE", "Capture Position Z by Primary Energy", 800, 600);
+        gPad->SetGridx();
+        gPad->SetGridy();
+        double yMaxE = 0;
+        for (int e = 0; e < nEBins; ++e)
+        {
+            vH_cpposZ_byE[e]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
+        }
+        TLegend *legE = new TLegend(0.55, 0.7, 0.88, 0.88);
+        h1_cpposZ->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
+        h1_cpposZ->SetLineColor(kBlack);
+        h1_cpposZ->SetMinimum(0);
+        h1_cpposZ->Draw("HIST E");
+        legE->AddEntry(h1_cpposZ, "Total", "l");
+        for (int e = 0; e < nEBins; ++e)
+        {
+            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
+            // vH_cpposZ_byE[e]->SetMaximum(yMaxE * 1.3);
+            vH_cpposZ_byE[e]->Draw(e == 0 ? "HIST E SAME" : "HIST E SAME");
+            legE->AddEntry(vH_cpposZ_byE[e], primEnergyLabels[e], "l");
+        }
+        legE->Draw();
+        vCan.push_back(cCpposZByE);
+
         TCanvas *cCpposEByZ = new TCanvas("cCpposEByZ", "Capture Energy Spectrum by Z Region", 800, 600);
         gPad->SetLogx();
         gPad->SetLogy();
@@ -631,10 +646,6 @@ void DetectPosition_Cdfilm()
                 h->Scale(1.0 / eqTime); // Convert to cps
                 yMax = max(yMax, entry.first->GetMaximum());
             }
-
-            double groupTotalInt = (nvHist > 1)
-                                       ? vHist[0].first->Integral(0, vHist[0].first->GetNbinsX() + 1)
-                                       : 0.0;
 
             for (int j = 0; j < vHist.size(); ++j)
             {
@@ -673,12 +684,7 @@ void DetectPosition_Cdfilm()
                 }
 
                 if (legend)
-                {
-                    double frac = (j > 0 && groupTotalInt > 0)
-                                      ? h->Integral(0, h->GetNbinsX() + 1) / groupTotalInt * 100.0
-                                      : 0.0;
-                    legend->AddEntry(h, j == 0 ? title : Form("%s (%.1f%%)", title.Data(), frac), "l");
-                }
+                    legend->AddEntry(h, title, "l");
             }
             if (legend)
                 legend->Draw();

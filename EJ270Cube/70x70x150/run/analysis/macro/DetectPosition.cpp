@@ -33,7 +33,7 @@ using namespace std;
 #include <TMultiGraph.h>
 #include <TLegend.h>
 
-void DetectPosition_Cdfilm()
+void DetectPosition()
 {
     // vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
     vector<TString> folder = {"0ppm"};
@@ -51,22 +51,11 @@ void DetectPosition_Cdfilm()
         // energy window
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
-        constexpr double captureEdepLow = 4.5;  // MeV
+        constexpr double captureEdepLow = 4.5; // MeV
         constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
-
-        constexpr double sideCut = 5;                 // mm, 20mm以内の範囲でのみカウントする
-        constexpr double fidHalfWidth = 50 - sideCut; // mm, 50mmの検出器のうち、20mm以内の範囲を除いた30mmの範囲でカウントする
-
-        vector<double> cdPlanePosXY = {
-            10 + DetectorOffsetZ,
-            20 + DetectorOffsetZ,
-            160 + DetectorOffsetZ,
-        }; // XY平面 (法線: Z軸) の位置 [mm]
-        vector<double> cdPlanePosZX = {-50, -50 + sideCut, 50 - sideCut, 50}; // ZX平面 (法線: Y軸) の位置 [mm]
-        vector<double> cdPlanePosZY = {-50, -50 + sideCut, 50 - sideCut, 50}; // ZY平面 (法線: X軸) の位置 [mm]
 
         for (auto axis : {"X", "Y", "Z"})
         {
@@ -229,16 +218,10 @@ void DetectPosition_Cdfilm()
         // const vector<string> scatterStepParticles = {"proton", "C12", "O16", "N14"};
         const vector<string> scatterStepParticles = {"proton"};
 
-        set<int> killedEvents; // 仮想Cd層で吸収されたeventIDの集合
-
         int nHits = HitTree->GetEntries();
         for (int i = 0; i < nHits; ++i)
         {
             HitTree->GetEntry(i);
-            if (killedEvents.count(eventID) > 0)
-            {
-                continue;
-            }
 
             // double fEdepQ = 0.0;     // Initialize quenched energy deposit
             // const double kB = 0.012; // Birks' constant (mm/MeV)
@@ -255,42 +238,8 @@ void DetectPosition_Cdfilm()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            if (string(fpname) == "neutron")
-            {
-                bool cdAbsorbed = false;
-                for (double zPlane : cdPlanePosXY) // XY平面 (法線: Z軸)
-                {
-                    if ((fPrePosZ - zPlane) * (fPostPosZ - zPlane) < 0.0 && fPreKinE <= TNEnergyCut)
-                    {
-                        cdAbsorbed = true;
-                    }
-                }
-                for (double yPlane : cdPlanePosZX) // ZX平面 (法線: Y軸)
-                {
-                    if ((fPrePosY - yPlane) * (fPostPosY - yPlane) < 0.0 && fPreKinE <= TNEnergyCut)
-                    {
-                        cdAbsorbed = true;
-                    }
-                }
-                for (double xPlane : cdPlanePosZY) // ZY平面 (法線: X軸)
-                {
-                    if ((fPrePosX - xPlane) * (fPostPosX - xPlane) < 0.0 && fPreKinE <= TNEnergyCut)
-                    {
-                        cdAbsorbed = true;
-                    }
-                }
-                if (cdAbsorbed)
-                {
-                    killedEvents.insert(eventID);
-                    continue;
-                }
-            }
-
             if (string(chamberNb) == "target1")
             {
-                if (fabs(fPrePosX) > fidHalfWidth || fabs(fPrePosY) > fidHalfWidth)
-                    continue;
-
                 EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
                 auto &acc = DetectorchamberMap[eventChamberID];
                 acc.edepSum += fEdep;
@@ -340,8 +289,6 @@ void DetectPosition_Cdfilm()
             }
         }
 
-        cout << "Virtual Cd layer absorbed: " << killedEvents.size() << " / " << nEvents << " events" << endl;
-
         for (const auto &entry : DetectorchamberMap)
         {
             eventChamberID = entry.first;
@@ -387,11 +334,10 @@ void DetectPosition_Cdfilm()
             vH_cpposZ_byE[e] = new TH1F(hname,
                                         Form("Capture Position Z (%s);Z (mm);Count rate (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
                                         nBinsZ, minZ, maxZ);
-            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
         }
 
         // Z region bins for capture energy spectra (projected onto energy axis)
-        vector<double> zProjEdges = {0, 10, 20, 160, 200};
+        vector<double> zProjEdges = {0, 5, 10, 20, 40, 160, 200};
         const int nZProjRegions = zProjEdges.size() - 1;
         vector<TString> zProjLabels;
         for (int z = 0; z < nZProjRegions; ++z)
@@ -411,7 +357,7 @@ void DetectPosition_Cdfilm()
         }
 
         // Z region bins for capture XY histograms
-        vector<double> zRegionEdges = {0, 5, 10, 20, 40, 60, 70, 75, 80, 160, 200};
+        vector<double> zRegionEdges = {0, 40, 160, 200};
         const int nZRegions = zRegionEdges.size() - 1;
         vector<TString> zRegionLabels;
         for (int z = 0; z < nZRegions; ++z)
@@ -467,14 +413,6 @@ void DetectPosition_Cdfilm()
         using HistLegPair = pair<TH1 *, TString>;
         vector<vector<HistLegPair>> vvHist;
         vvHist.push_back({{h2_cpposZ, "Capture Position Z"}});
-        {
-            h1_cpposZ->SetLineColor(kBlack);
-            vector<HistLegPair> group;
-            group.push_back({h1_cpposZ, "Total"});
-            for (int e = 0; e < nEBins; ++e)
-                group.push_back({vH_cpposZ_byE[e], primEnergyLabels[e]});
-            vvHist.push_back(group);
-        }
         vvHist.push_back({{h2_cpposXY, "Capture Position XY"}});
         for (int z = 0; z < nZRegions; ++z)
         {
@@ -595,22 +533,46 @@ void DetectPosition_Cdfilm()
             vCan.push_back(c1);
         }
 
+        TCanvas *cCpposZByE = new TCanvas("cCpposZByE", "Capture Position Z by Primary Energy", 800, 600);
+        gPad->SetGridx();
+        gPad->SetGridy();
+        double yMaxE = 0;
+        for (int e = 0; e < nEBins; ++e)
+        {
+            vH_cpposZ_byE[e]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
+        }
+        TLegend *legE = new TLegend(0.55, 0.7, 0.88, 0.88);
+        h1_cpposZ->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
+        h1_cpposZ->SetLineColor(kBlack);
+        h1_cpposZ->SetMinimum(0);
+        h1_cpposZ->Draw("HIST E");
+        legE->AddEntry(h1_cpposZ, "Total", "l");
+        for (int e = 0; e < nEBins; ++e)
+        {
+            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
+            // vH_cpposZ_byE[e]->SetMaximum(yMaxE * 1.3);
+            vH_cpposZ_byE[e]->Draw(e == 0 ? "HIST E SAME" : "HIST E SAME");
+            legE->AddEntry(vH_cpposZ_byE[e], primEnergyLabels[e], "l");
+        }
+        legE->Draw();
+        vCan.push_back(cCpposZByE);
+
         TCanvas *cCpposEByZ = new TCanvas("cCpposEByZ", "Capture Energy Spectrum by Z Region", 800, 600);
         gPad->SetLogx();
-        gPad->SetLogy();
+        // gPad->SetLogy();
         double yMaxEZ = 0;
         for (int z = 0; z < nZProjRegions; ++z)
         {
             double thickness = zProjEdges[z + 1] - zProjEdges[z];
-            vH1_cpposE_byZ[z]->Scale(1.0 / eqTime);           // 他のヒストグラムと同様にcps換算
+            vH1_cpposE_byZ[z]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
             vH1_cpposE_byZ[z]->Scale(1.0 / (10 * thickness)); // 厚みで割って単位をs^-1 mm^-1に変換
             yMaxEZ = max(yMaxEZ, vH1_cpposE_byZ[z]->GetMaximum());
         }
-        TLegend *legEZ = new TLegend(0.55, 0.6, 0.88, 0.88);
+        TLegend *legEZ = new TLegend(0.55, 0.7, 0.88, 0.88);
         for (int z = 0; z < nZProjRegions; ++z)
         {
             vH1_cpposE_byZ[z]->SetMaximum(yMaxEZ * 1.5);
-            vH1_cpposE_byZ[z]->SetMinimum(1e-5);
+            vH1_cpposE_byZ[z]->SetMinimum(1e-4);
             vH1_cpposE_byZ[z]->Draw(z == 0 ? "HIST" : "HIST SAME");
             legEZ->AddEntry(vH1_cpposE_byZ[z], zProjLabels[z], "l");
         }
@@ -631,10 +593,6 @@ void DetectPosition_Cdfilm()
                 h->Scale(1.0 / eqTime); // Convert to cps
                 yMax = max(yMax, entry.first->GetMaximum());
             }
-
-            double groupTotalInt = (nvHist > 1)
-                                       ? vHist[0].first->Integral(0, vHist[0].first->GetNbinsX() + 1)
-                                       : 0.0;
 
             for (int j = 0; j < vHist.size(); ++j)
             {
@@ -673,12 +631,7 @@ void DetectPosition_Cdfilm()
                 }
 
                 if (legend)
-                {
-                    double frac = (j > 0 && groupTotalInt > 0)
-                                      ? h->Integral(0, h->GetNbinsX() + 1) / groupTotalInt * 100.0
-                                      : 0.0;
-                    legend->AddEntry(h, j == 0 ? title : Form("%s (%.1f%%)", title.Data(), frac), "l");
-                }
+                    legend->AddEntry(h, title, "l");
             }
             if (legend)
                 legend->Draw();
@@ -687,7 +640,7 @@ void DetectPosition_Cdfilm()
         // save PDF
         if (true)
         {
-            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_Cdfilm.pdf";
+            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition.pdf";
             if (vCan.size() == 1)
                 vCan.at(0)->Print(fPdfOut);
             else
