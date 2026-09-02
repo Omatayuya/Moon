@@ -57,7 +57,7 @@ void DetectPosition_Cdfilm()
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
 
-        constexpr double sideCut = 5;                 // mm, 20mm以内の範囲でのみカウントする
+        constexpr double sideCut = 20;                 // mm, 20mm以内の範囲でのみカウントする
         constexpr double fidHalfWidth = 50 - sideCut; // mm, 50mmの検出器のうち、20mm以内の範囲を除いた30mmの範囲でカウントする
 
         vector<double> cdPlanePosXY = {
@@ -387,9 +387,8 @@ void DetectPosition_Cdfilm()
             vH_cpposZ_byE[e] = new TH1F(hname,
                                         Form("Capture Position Z (%s);Z (mm);Count rate (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
                                         nBinsZ, minZ, maxZ);
+            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
         }
-
-        // Z region bins for capture energy spectra (projected onto energy axis)
         vector<double> zProjEdges = {0, 10, 20, 160, 200};
         const int nZProjRegions = zProjEdges.size() - 1;
         vector<TString> zProjLabels;
@@ -408,15 +407,14 @@ void DetectPosition_Cdfilm()
             vH1_cpposE_byZ[z]->SetLineColor(TColor::GetColorPalette(
                 static_cast<int>(1.0 * z * (TColor::GetNumberOfColors() - 1) / (nZProjRegions - 1))));
         }
-
-        // Z region bins for capture XY histograms
-        vector<double> zRegionEdges = {0, 40, 160, 200};
+        vector<double> zRegionEdges = {0, 5, 10, 20, 40, 60, 70, 75, 80};
         const int nZRegions = zRegionEdges.size() - 1;
         vector<TString> zRegionLabels;
         for (int z = 0; z < nZRegions; ++z)
         {
             zRegionLabels.push_back(Form("%.0f <= Z < %.0f ", zRegionEdges[z], zRegionEdges[z + 1]));
         }
+
         vector<TH2D *> vH2_cpposXY_byZ(nZRegions);
         for (int z = 0; z < nZRegions; ++z)
         {
@@ -426,11 +424,20 @@ void DetectPosition_Cdfilm()
                                                zRegionLabels[z].Data(), BinWidthXY, BinWidthXY),
                                           nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
         }
-        constexpr double xFidCutLow = -30.0; // mm, フィデューシャルカット下限
-        constexpr double xFidCutHigh = 30.0; // mm, フィデューシャルカット上限
+        constexpr double xFidCutLow = -(50.0 - sideCut); // mm, フィデューシャルカット下限
+        constexpr double xFidCutHigh = 50.0 - sideCut; // mm, フィデューシャルカット上限
         constexpr int nEnergyBins_cppos = 200;
         for (int i = 0; i <= nEnergyBins_cppos; ++i)
             energyBins[i] = energyMin * pow(energyMax / energyMin, static_cast<double>(i) / nEnergyBins_cppos);
+        vector<TH2D *> vH2_cpposEY_byZ(nZRegions);
+        for (int z = 0; z < nZRegions; ++z)
+        {
+            TString hname = Form("h2_cpposEY_Z%d", z);
+            vH2_cpposEY_byZ[z] = new TH2D(hname,
+                                          Form("Capture Position Y (%s, %.0f < X < %.0f );Energy (MeV);Y (mm);Count rate",
+                                               zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
+                                          nEnergyBins_cppos, energyBins, nBinsXY, minXY, maxXY);
+        }
         vector<TH1D *> vH1_cpposY_byZ(nZRegions);
         for (int z = 0; z < nZRegions; ++z)
         {
@@ -440,14 +447,28 @@ void DetectPosition_Cdfilm()
                                               zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh, BinWidthXY),
                                          nBinsXY, minXY, maxXY);
         }
-        vector<TH2D *> vH2_cpposEY_byZ(nZRegions);
+        vector<TH1D *> vH1_cpposE_byZregion(nZRegions);
+        TArrayI savedPalette = TColor::GetPalette();
+        gStyle->SetPalette(kRainBow);
         for (int z = 0; z < nZRegions; ++z)
         {
-            TString hname = Form("h2_cpposEY_Z%d", z);
-            vH2_cpposEY_byZ[z] = new TH2D(hname,
-                                          Form("Capture Position Y (%s, %.0f < X < %.0f );Energy (MeV);Y (mm);Count rate",
-                                               zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
-                                          nEnergyBins_cppos, energyBins, nBinsXY, minXY, maxXY);
+            TString hname = Form("h1_cpposEfid_Z%d", z);
+            vH1_cpposE_byZregion[z] = new TH1D(hname,
+                                               Form("Capture Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
+                                                    zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
+                                               nEnergyBins_cppos, energyBins);
+            vH1_cpposE_byZregion[z]->SetLineColor(TColor::GetColorPalette(
+                static_cast<int>(1.0 * z * (TColor::GetNumberOfColors() - 1) / (nZRegions - 1))));
+        }
+        gStyle->SetPalette(savedPalette.GetSize(), savedPalette.GetArray());
+        vector<TH1D *> vH1_cpposE_byZregion_ind(nZRegions);
+        for (int z = 0; z < nZRegions; ++z)
+        {
+            TString hname = Form("h1_cpposEfid_Z%d_ind", z);
+            vH1_cpposE_byZregion_ind[z] = new TH1D(hname,
+                                                   Form("Capture Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
+                                                        zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
+                                                   nEnergyBins_cppos, energyBins);
         }
         vector<vector<TH1D *>> vH1_cpposY_byZ_byE(nZRegions, vector<TH1D *>(nEBins));
         for (int z = 0; z < nZRegions; ++z)
@@ -463,20 +484,40 @@ void DetectPosition_Cdfilm()
             }
         }
 
+        // vvHist: vector of vector of pairs of histogram and legend label
         using HistLegPair = pair<TH1 *, TString>;
         vector<vector<HistLegPair>> vvHist;
         vvHist.push_back({{h2_cpposZ, "Capture Position Z"}});
+        {
+            h1_cpposZ->SetLineColor(kBlack);
+            vector<HistLegPair> group;
+            group.push_back({h1_cpposZ, "Total"});
+            for (int e = 0; e < nEBins; ++e)
+                group.push_back({vH_cpposZ_byE[e], primEnergyLabels[e]});
+            vvHist.push_back(group);
+        }
         vvHist.push_back({{h2_cpposXY, "Capture Position XY"}});
         for (int z = 0; z < nZRegions; ++z)
         {
-            // vvHist.push_back({{vH2_cpposXY_byZ[z], Form("Capture Position XY (%s)", zRegionLabels[z].Data())}});
             vvHist.push_back({{vH2_cpposEY_byZ[z], Form("Capture Position EY (%s)", zRegionLabels[z].Data())}});
 
             vH1_cpposY_byZ[z]->SetLineColor(kBlack);
             vector<HistLegPair> group;
             group.push_back({vH1_cpposY_byZ[z], "Total"});
             for (int e = 0; e < nEBins; ++e)
+            {
                 group.push_back({vH1_cpposY_byZ_byE[z][e], primEnergyLabels[e]});
+            }
+            vvHist.push_back({{vH1_cpposE_byZregion_ind[z], Form("Capture Energy (%s, %.0f < X < %.0f)", zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh)}});
+            vvHist.push_back(group);
+        }
+        {
+            vH1_cpposE_byZregion[0]->SetTitle("Capture Energy by Z Region ;Energy (MeV);Count rate (s^{-1} bin^{-1})");
+            vector<HistLegPair> group;
+            for (int z = 0; z < nZRegions; ++z)
+            {
+                group.push_back({vH1_cpposE_byZregion[z], zRegionLabels[z]});
+            }
             vvHist.push_back(group);
         }
         vvHist.push_back({{h1_scposZ, "Scatter Position Z"}});
@@ -502,6 +543,8 @@ void DetectPosition_Cdfilm()
                         {
                             vH1_cpposY_byZ[z]->Fill(capturePosY);
                             vH2_cpposEY_byZ[z]->Fill(eventChamberID.primEnergy, capturePosY);
+                            vH1_cpposE_byZregion[z]->Fill(eventChamberID.primEnergy);
+                            vH1_cpposE_byZregion_ind[z]->Fill(eventChamberID.primEnergy);
                             for (int e = 0; e < nEBins; ++e)
                             {
                                 if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
@@ -586,30 +629,6 @@ void DetectPosition_Cdfilm()
             vCan.push_back(c1);
         }
 
-        TCanvas *cCpposZByE = new TCanvas("cCpposZByE", "Capture Position Z by Primary Energy", 800, 600);
-        gPad->SetGridx();
-        gPad->SetGridy();
-        double yMaxE = 0;
-        for (int e = 0; e < nEBins; ++e)
-        {
-            vH_cpposZ_byE[e]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
-        }
-        TLegend *legE = new TLegend(0.55, 0.7, 0.88, 0.88);
-        h1_cpposZ->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
-        h1_cpposZ->SetLineColor(kBlack);
-        h1_cpposZ->SetMinimum(0);
-        h1_cpposZ->Draw("HIST E");
-        legE->AddEntry(h1_cpposZ, "Total", "l");
-        for (int e = 0; e < nEBins; ++e)
-        {
-            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
-            // vH_cpposZ_byE[e]->SetMaximum(yMaxE * 1.3);
-            vH_cpposZ_byE[e]->Draw(e == 0 ? "HIST E SAME" : "HIST E SAME");
-            legE->AddEntry(vH_cpposZ_byE[e], primEnergyLabels[e], "l");
-        }
-        legE->Draw();
-        vCan.push_back(cCpposZByE);
-
         TCanvas *cCpposEByZ = new TCanvas("cCpposEByZ", "Capture Energy Spectrum by Z Region", 800, 600);
         gPad->SetLogx();
         gPad->SetLogy();
@@ -637,7 +656,9 @@ void DetectPosition_Cdfilm()
             auto &vHist = vvHist[i];
             int nvHist = vHist.size();
             vCan.push_back(new TCanvas(Form("c%d", i + 2), vHist[0].first->GetTitle(), 800, 600));
-            TLegend *legend = (nvHist > 1) ? new TLegend(0.55, 0.7, 0.88, 0.88) : nullptr;
+            TLegend *legend = (nvHist > 1) ? new TLegend(0.55, 0.77, 0.88, 0.93) : nullptr;
+            if (nvHist > 6)
+                legend->SetNColumns(2);
 
             double yMax = 0;
             for (auto &entry : vHist)
@@ -646,6 +667,11 @@ void DetectPosition_Cdfilm()
                 h->Scale(1.0 / eqTime); // Convert to cps
                 yMax = max(yMax, entry.first->GetMaximum());
             }
+
+            bool hasTotal = (nvHist > 1 && vHist[0].second == "Total");
+            double groupTotalInt = (nvHist > 1)
+                                       ? vHist[0].first->Integral(0, vHist[0].first->GetNbinsX() + 1)
+                                       : 0.0;
 
             for (int j = 0; j < vHist.size(); ++j)
             {
@@ -678,13 +704,30 @@ void DetectPosition_Cdfilm()
                 {
                     gPad->SetGridx();
                     gPad->SetGridy();
-                    h1->SetMaximum(yMax * 1.3);
-                    h1->SetMinimum(0);
+                    bool isEnergyProj = TString(h1->GetName()).BeginsWith("h1_cpposEfid_Z");
+                    if (isEnergyProj)
+                    {
+                        gPad->SetLogx();
+                        gPad->SetLogy();
+                        h1->SetMaximum(yMax * 2);
+                        h1->SetMinimum(5e-3);
+                    }
+                    else
+                    {
+                        h1->SetMaximum(yMax * 1.3);
+                        h1->SetMinimum(0);
+                    }
                     h1->Draw(j == 0 ? "HIST E" : "HIST E SAME");
                 }
 
                 if (legend)
-                    legend->AddEntry(h, title, "l");
+                {
+                    bool showFrac = (hasTotal && j > 0 && groupTotalInt > 0);
+                    double frac = (j > 0 && groupTotalInt > 0)
+                                      ? h->Integral(0, h->GetNbinsX() + 1) / groupTotalInt * 100.0
+                                      : 0.0;
+                    legend->AddEntry(h, showFrac ? Form("%s (%.1f%%)", title.Data(), frac) : title, "l");
+                }
             }
             if (legend)
                 legend->Draw();
@@ -693,7 +736,7 @@ void DetectPosition_Cdfilm()
         // save PDF
         if (true)
         {
-            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_Cdfilm.pdf";
+            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_Cdfilm_sideCut" + Form("%.0f", sideCut) + "mmt.pdf";
             if (vCan.size() == 1)
                 vCan.at(0)->Print(fPdfOut);
             else

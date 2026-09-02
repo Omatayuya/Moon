@@ -51,7 +51,7 @@ void DetectPosition()
         // energy window
         constexpr double scatterEdepLow = 1.0; // MeV
         // constexpr double scatterEdepHigh = 3.0; // MeV
-        constexpr double captureEdepLow = 4.5; // MeV
+        constexpr double captureEdepLow = 4.5;  // MeV
         constexpr double captureEdepHigh = 5.0; // MeV
 
         // Thermal neutron cut (109Cd)
@@ -183,14 +183,13 @@ void DetectPosition()
 
         double primEnergy;
         int eventID, fPID, fPPID;
-        char chamberNb[256], fpname[256], fCProc[256];
-        char collection[256], fPreProc[256], fPostProc[256], fCModel[256];
-        double fPreKinE, fPostKinE, fEdep, fGTime, fLTime, fPTime, fDTime;
-        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ, fStepLength;
+        char fpname[256], fCProc[256];
+        char collection[256], fPreProc[256], fPostProc[256];
+        double fPreKinE, fPostKinE, fEdep, fGTime;
+        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ;
 
         HitTree->SetBranchAddress("eventID", &eventID);
         HitTree->SetBranchAddress("primEnergy", &primEnergy);
-        HitTree->SetBranchAddress("chamberNb", chamberNb);
         HitTree->SetBranchAddress("collection", collection);
         HitTree->SetBranchAddress("PID", &fPID);
         HitTree->SetBranchAddress("PPID", &fPPID);
@@ -198,22 +197,17 @@ void DetectPosition()
         HitTree->SetBranchAddress("PreProc", fPreProc);
         HitTree->SetBranchAddress("PostProc", fPostProc);
         HitTree->SetBranchAddress("CProc", fCProc);
-        HitTree->SetBranchAddress("CModel", fCModel);
         HitTree->SetBranchAddress("PreKinE", &fPreKinE);
         HitTree->SetBranchAddress("PostKinE", &fPostKinE);
         HitTree->SetBranchAddress("Edep", &fEdep);
         HitTree->SetBranchAddress("GTime", &fGTime);
-        HitTree->SetBranchAddress("LTime", &fLTime);
-        HitTree->SetBranchAddress("PTime", &fPTime);
-        HitTree->SetBranchAddress("DTime", &fDTime);
         HitTree->SetBranchAddress("PrePosX", &fPrePosX);
         HitTree->SetBranchAddress("PrePosY", &fPrePosY);
         HitTree->SetBranchAddress("PrePosZ", &fPrePosZ);
         HitTree->SetBranchAddress("PostPosX", &fPostPosX);
         HitTree->SetBranchAddress("PostPosY", &fPostPosY);
         HitTree->SetBranchAddress("PostPosZ", &fPostPosZ);
-        HitTree->SetBranchAddress("StepLength", &fStepLength);
-
+        
         const vector<string> captureStepParticles = {"alpha", "triton"};
         // const vector<string> scatterStepParticles = {"proton", "C12", "O16", "N14"};
         const vector<string> scatterStepParticles = {"proton"};
@@ -238,53 +232,50 @@ void DetectPosition()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            if (string(chamberNb) == "target1")
+            EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
+            auto &acc = DetectorchamberMap[eventChamberID];
+            acc.edepSum += fEdep;
+
+            /* screening conditions for Capture & Scatter event*/
+            const bool isCaptureParticle =
+                find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
+            const bool isScatterParticle =
+                find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
+
+            const bool isCaptureDepositStep =
+                (fEdep > 0.0) &&
+                isCaptureParticle &&
+                (string(fCProc) == "neutronInelastic");
+            const bool isScatterDepositStep =
+                (fEdep > 0.0) &&
+                isScatterParticle &&
+                // isPrimaryNeutronSecondary &&
+                (string(fCProc) == "hadElastic");
+
+            if (isCaptureDepositStep)
             {
-                EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
-                auto &acc = DetectorchamberMap[eventChamberID];
-                acc.edepSum += fEdep;
+                acc.cpEdepSum += fEdep;
 
-                /* screening conditions for Capture & Scatter event*/
-                const bool isCaptureParticle =
-                    find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
-                const bool isScatterParticle =
-                    find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
-
-                const bool isCaptureDepositStep =
-                    (fEdep > 0.0) &&
-                    isCaptureParticle &&
-                    (string(fCProc) == "neutronInelastic");
-                const bool isScatterDepositStep =
-                    (fEdep > 0.0) &&
-                    isScatterParticle &&
-                    // isPrimaryNeutronSecondary &&
-                    (string(fCProc) == "hadElastic");
-
-                if (isCaptureDepositStep)
+                if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                 {
-                    acc.cpEdepSum += fEdep;
-
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
-                    {
-                        acc.captureflag = true;
-                        acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
-                        acc.cpPosX = fPrePosX;
-                        acc.cpPosY = fPrePosY;
-                        acc.cpPosZ = fPrePosZ;
-                    }
+                    acc.captureflag = true;
+                    acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
+                    acc.cpPosX = fPrePosX;
+                    acc.cpPosY = fPrePosY;
+                    acc.cpPosZ = fPrePosZ;
                 }
+            }
 
-                if (isScatterDepositStep)
+            if (isScatterDepositStep)
+            {
+                acc.scEdepSum += fEdep;
+                if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
                 {
-                    acc.scEdepSum += fEdep;
-                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
-                    {
-                        acc.scatterflag = true;
-                        acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
-                        acc.scPosX = fPrePosX;
-                        acc.scPosY = fPrePosY;
-                        acc.scPosZ = fPrePosZ;
-                    }
+                    acc.scatterflag = true;
+                    acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
+                    acc.scPosX = fPrePosX;
+                    acc.scPosY = fPrePosY;
+                    acc.scPosZ = fPrePosZ;
                 }
             }
         }
@@ -564,7 +555,7 @@ void DetectPosition()
         for (int z = 0; z < nZProjRegions; ++z)
         {
             double thickness = zProjEdges[z + 1] - zProjEdges[z];
-            vH1_cpposE_byZ[z]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
+            vH1_cpposE_byZ[z]->Scale(1.0 / eqTime);           // 他のヒストグラムと同様にcps換算
             vH1_cpposE_byZ[z]->Scale(1.0 / (10 * thickness)); // 厚みで割って単位をs^-1 mm^-1に変換
             yMaxEZ = max(yMaxEZ, vH1_cpposE_byZ[z]->GetMaximum());
         }

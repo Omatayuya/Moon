@@ -34,7 +34,7 @@ void B2aDetectorConstruction::ConstructSensor()
   {
     constexpr G4double SizeX = 7 * cm;
     constexpr G4double SizeY = 7 * cm;
-    constexpr G4double SizeZ = 80 * cm;
+    constexpr G4double SizeZ = 8 * cm;
 
     constexpr G4double offsetZ = 50 * cm;
 
