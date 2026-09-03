@@ -37,17 +37,25 @@ void CountRate_To_WaterContent()
 {
     // ==================================================================
     // const Double_t irrArea = pow(450, 2);                    // irradiation surface area (cm^2) for Proton, Helium
-    const Double_t DetectorOffsetZ = 400; // Detector offset in Z (mm)
+    const Double_t DetectorOffsetZ = 460; // Detector offset in Z (mm)
     const Double_t irrArea = 600 * 600;   // irradiation surface area (cm^2) for Proton, Helium
-    const Double_t SDArea = 10 * 10;      // Sensitive detector area (cm^2)
 
     // energy window
-    constexpr double scatterEdepLow = 1.0; // MeV
-    // constexpr double scatterEdepHigh = 3.0; // MeV
-    constexpr double captureEdepLow = 4.5; // MeV
+    constexpr double scatterEdepLow = 1.0;  // MeV
+    constexpr double scatterEdepHigh = 3.0; // MeV
+    constexpr double captureEdepLow = 4.5;  // MeV
+    constexpr double captureEdepHigh = 5.0; // MeV
 
     // Thermal neutron cut (109Cd)
     constexpr double TNEnergyCut = 5e-7; // MeV
+
+    // Fiducial cut & virtual Cd layer (DetectPosition.cpp と同じ)
+    constexpr Double_t EJ270HalfWidth = 35;                                                           // mm
+    constexpr double sideCut = 5;                                                                     // mm
+    const double fidHalfWidth = EJ270HalfWidth - sideCut;                                             // mm
+    vector<double> cdPlanePosXY = {10 + DetectorOffsetZ, 20 + DetectorOffsetZ, 70 + DetectorOffsetZ}; // XY平面 (法線: Z軸) [mm]
+    vector<double> cdPlanePosZX = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut};              // ZX平面 (法線: Y軸) [mm]
+    vector<double> cdPlanePosZY = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut};              // ZY平面 (法線: X軸) [mm]
 
     // Primary energy bins
     constexpr int nEBins = 4;
@@ -203,14 +211,13 @@ void CountRate_To_WaterContent()
 
         double primEnergy;
         int eventID, fPID, fPPID;
-        char chamberNb[256], fpname[256], fCProc[256];
-        char collection[256], fPreProc[256], fPostProc[256], fCModel[256];
-        double fPreKinE, fPostKinE, fEdep, fGTime, fLTime, fPTime, fDTime;
-        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ, fStepLength;
+        char fpname[256], fCProc[256];
+        char collection[256], fPreProc[256], fPostProc[256];
+        double fPreKinE, fPostKinE, fEdep, fGTime;
+        double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ;
 
         HitTree->SetBranchAddress("eventID", &eventID);
         HitTree->SetBranchAddress("primEnergy", &primEnergy);
-        HitTree->SetBranchAddress("chamberNb", chamberNb);
         HitTree->SetBranchAddress("collection", collection);
         HitTree->SetBranchAddress("PID", &fPID);
         HitTree->SetBranchAddress("PPID", &fPPID);
@@ -218,30 +225,56 @@ void CountRate_To_WaterContent()
         HitTree->SetBranchAddress("PreProc", fPreProc);
         HitTree->SetBranchAddress("PostProc", fPostProc);
         HitTree->SetBranchAddress("CProc", fCProc);
-        HitTree->SetBranchAddress("CModel", fCModel);
         HitTree->SetBranchAddress("PreKinE", &fPreKinE);
         HitTree->SetBranchAddress("PostKinE", &fPostKinE);
         HitTree->SetBranchAddress("Edep", &fEdep);
         HitTree->SetBranchAddress("GTime", &fGTime);
-        HitTree->SetBranchAddress("LTime", &fLTime);
-        HitTree->SetBranchAddress("PTime", &fPTime);
-        HitTree->SetBranchAddress("DTime", &fDTime);
         HitTree->SetBranchAddress("PrePosX", &fPrePosX);
         HitTree->SetBranchAddress("PrePosY", &fPrePosY);
         HitTree->SetBranchAddress("PrePosZ", &fPrePosZ);
         HitTree->SetBranchAddress("PostPosX", &fPostPosX);
         HitTree->SetBranchAddress("PostPosY", &fPostPosY);
         HitTree->SetBranchAddress("PostPosZ", &fPostPosZ);
-        HitTree->SetBranchAddress("StepLength", &fStepLength);
 
         const vector<string> captureStepParticles = {"alpha", "triton"};
         // const vector<string> scatterStepParticles = {"proton", "C12", "O16", "N14"};
         const vector<string> scatterStepParticles = {"proton"};
 
+        set<int> CdCutEventSets; // Set to store event IDs that pass the Cd cut
         int nHits = HitTree->GetEntries();
         for (int i = 0; i < nHits; ++i)
         {
             HitTree->GetEntry(i);
+
+            if (CdCutEventSets.count(eventID) > 0)
+            {
+                continue;
+            }
+
+            if (string(fpname) == "neutron")
+            {
+                bool cdAbsorbed = false;
+                for (double zPlane : cdPlanePosXY) // XY平面 (法線: Z軸)
+                {
+                    if ((fPrePosZ - zPlane) * (fPostPosZ - zPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                        cdAbsorbed = true;
+                }
+                for (double yPlane : cdPlanePosZX) // ZX平面 (法線: Y軸)
+                {
+                    if ((fPrePosY - yPlane) * (fPostPosY - yPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                        cdAbsorbed = true;
+                }
+                for (double xPlane : cdPlanePosZY) // ZY平面 (法線: X軸)
+                {
+                    if ((fPrePosX - xPlane) * (fPostPosX - xPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                        cdAbsorbed = true;
+                }
+                if (cdAbsorbed)
+                {
+                    CdCutEventSets.insert(eventID);
+                    continue;
+                }
+            }
 
             // double fEdepQ = 0.0;     // Initialize quenched energy deposit
             // const double kB = 0.012; // Birks' constant (mm/MeV)
@@ -258,9 +291,9 @@ void CountRate_To_WaterContent()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            if (string(chamberNb) == "target1")
+            if (string(collection) == "TrackerHitsCollection")
             {
-                EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
+                EventChamberID eventChamberID{eventID, primEnergy, string(collection)};
                 auto &acc = DetectorchamberMap[eventChamberID];
                 acc.edepSum += fEdep;
 
@@ -284,7 +317,7 @@ void CountRate_To_WaterContent()
                 {
                     acc.cpEdepSum += fEdep;
 
-                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow)
+                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
                     {
                         acc.captureflag = true;
                         acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
@@ -297,7 +330,7 @@ void CountRate_To_WaterContent()
                 if (isScatterDepositStep)
                 {
                     acc.scEdepSum += fEdep;
-                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
+                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow && acc.scEdepSum < scatterEdepHigh)
                     {
                         acc.scatterflag = true;
                         acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
@@ -308,6 +341,8 @@ void CountRate_To_WaterContent()
                 }
             }
         }
+
+        cout << "Virtual Cd layer absorbed: " << CdCutEventSets.size() << " / " << nEvents << " events" << endl;
 
         for (const auto &entry : DetectorchamberMap)
         {
@@ -320,11 +355,11 @@ void CountRate_To_WaterContent()
 
         int BinWidthZ = 5; // mm
         int minZ = 0;      // mm
-        int maxZ = 200;    // mm
+        int maxZ = 80;     // mm
         int nBinsZ = (maxZ - minZ) / BinWidthZ;
         int BinWidthXY = 5; // mm
-        int minXY = -75;    // mm
-        int maxXY = 75;     // mm
+        int minXY = -35;    // mm
+        int maxXY = 35;     // mm
         int nBinsXY = (maxXY - minXY) / BinWidthXY;
 
         TH1F *h1_cpposZ = new TH1F("h1_cpposZ", Form("Capture Position Z Distribution;Z (mm);Counts (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
@@ -333,15 +368,6 @@ void CountRate_To_WaterContent()
         TH2D *h2_cpposXY_TNcut = new TH2D("h2_cpposXY_TNcut", Form("Capture Position XY Distribution (TN cut / %.1f eV <);X (mm);Y (mm);Counts (s^{-1} %d #times %d mm^{-2})", TNEnergyCut * 1e6, BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
         TH1F *h1_scposZ = new TH1F("h1_scposZ", Form("Scatter Position Z Distribution;Z (mm);Counts (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
         TH2D *h2_scposXY = new TH2D("h2_scposXY", Form("Scatter Position XY Distribution;X (mm);Y (mm);Counts (s^{-1} %d #times %d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-
-        // vector<TH1F *> vH_cpposZ_byE(nEBins);
-        // for (size_t e = 0; e < nEBins; ++e)
-        // {
-        //     TString hname = Form("h1_cpposZ_E%d", e);
-        //     vH_cpposZ_byE[e] = new TH1F(hname,
-        //                                 Form("Capture Position Z (%s);Z (mm);Counts (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
-        //                                 nBinsZ, minZ, maxZ);
-        // }
 
         for (int i = 0; i < entries; ++i)
         {
@@ -392,292 +418,199 @@ void CountRate_To_WaterContent()
         vHistscPosZ.push_back(h1_scposZ);
     }
 
-    // === scatter/capture, scatter/capture_TNcut, capture/capture_TNcut vs 含水率 ===
-    double TNLayerRange[] = {0.0, 20.0};
-    double ENLayerRange[] = {40.0, 160.0};
-    double TNlayerThickness = (TNLayerRange[1] - TNLayerRange[0]) * 0.1; // cm
-    double ENlayerThickness = (ENLayerRange[1] - ENLayerRange[0]) * 0.1; // cm
-    double scatterLayerThickness = TNlayerThickness + ENlayerThickness;  // cm
-    double captureToRate = 1 / (TNlayerThickness * SDArea);              // cm^-1 cm^-2
-    double captureTNcutToRate = 1 / (ENlayerThickness * SDArea);         // cm^-1 cm^-2
-    double scatterToRate = 1 / (scatterLayerThickness * SDArea);         // cm^-1 cm^-2
+    // === 各検出層ごとの capture レートと、全 scatter に対する比率 vs 含水率 ===
+    vector<double> vSensThick = {0, 5, 10, 20, 40}; // mm、DetectPosition.cpp と同じ流儀
+    const int nSensThick = vSensThick.size() - 1;
+    vector<TString> zRegionLabels;
+    for (int z = 0; z < nSensThick; ++z)
+        zRegionLabels.push_back(Form("%.0f #leq Z < %.0f mm", vSensThick[z], vSensThick[z + 1]));
 
     vector<double> vPpm;
-    vector<double> vCp, vCpErr, vCpTNcut, vCpTNcutErr, vSc, vScErr;
-    vector<double> vRatio_scCp, vRatio_scCpTNcut, vRatio_cpCpTNcut;
-    vector<double> vRatio_scCpErr, vRatio_scCpTNcutErr, vRatio_cpCpTNcutErr;
+    vector<double> vSc, vScErr;                                                 // 全 scatter レート (s^-1)
+    vector<vector<double>> vCpLayer(nSensThick), vCpLayerErr(nSensThick);       // [layer][ppm] capture レート (s^-1)
+    vector<vector<double>> vRatioLayer(nSensThick), vRatioLayerErr(nSensThick); // [layer][ppm] capture_layer / scatter_total
     for (size_t i = 0; i < vHistcpPosZ.size(); ++i)
     {
-        int bin_TN_low = vHistcpPosZ[i]->GetXaxis()->FindBin(TNLayerRange[0]);
-        int bin_TN_high = vHistcpPosZ[i]->GetXaxis()->FindBin(TNLayerRange[1]) - 1;
-        int bin_EN_low = vHistcpPosZ_TNcut[i]->GetXaxis()->FindBin(ENLayerRange[0]);
-        int bin_EN_high = vHistcpPosZ_TNcut[i]->GetXaxis()->FindBin(ENLayerRange[1]) - 1;
-
         double scatterErr = 0;
         double scatterSum = vHistscPosZ[i]->IntegralAndError(1, vHistscPosZ[i]->GetNbinsX(), scatterErr);
-        double captureErr = 0;
-        double captureSum = vHistcpPosZ[i]->IntegralAndError(bin_TN_low, bin_TN_high, captureErr); // Z = 0-40 mm
-        double captureTNcutErr = 0;
-        double captureTNcutSum = vHistcpPosZ_TNcut[i]->IntegralAndError(bin_EN_low, bin_EN_high, captureTNcutErr); // Z = 40-120 mm
+        vSc.push_back(scatterSum);
+        vScErr.push_back(scatterErr);
 
-        double captureRate = captureSum * captureToRate;
-        double captureErrRate = captureErr * captureToRate;
-        double captureTNcutRate = captureTNcutSum * captureTNcutToRate;
-        double captureTNcutErrRate = captureTNcutErr * captureTNcutToRate;
-        double scatterRate = scatterSum * scatterToRate;
-        double scatterErrRate = scatterErr * scatterToRate;
+        for (int z = 0; z < nSensThick; ++z)
+        {
+            int binLo = vHistcpPosZ[i]->GetXaxis()->FindBin(vSensThick[z]);
+            int binHi = vHistcpPosZ[i]->GetXaxis()->FindBin(vSensThick[z + 1]) - 1;
+            double capErr = 0;
+            double capSum = vHistcpPosZ[i]->IntegralAndError(binLo, binHi, capErr);
+            vCpLayer[z].push_back(capSum);
+            vCpLayerErr[z].push_back(capErr);
 
-        vCp.push_back(captureRate);
-        vCpErr.push_back(captureErrRate);
-        vCpTNcut.push_back(captureTNcutRate);
-        vCpTNcutErr.push_back(captureTNcutErrRate);
-        vSc.push_back(scatterRate);
-        vScErr.push_back(scatterErrRate);
+            double ratio = (capSum > 0 && scatterSum > 0) ? capSum / scatterSum : 0.0;
+            double ratioErr = (ratio > 0)
+                                  ? ratio * sqrt(pow(capErr / capSum, 2) + pow(scatterErr / scatterSum, 2))
+                                  : 0.0;
+            vRatioLayer[z].push_back(ratio);
+            vRatioLayerErr[z].push_back(ratioErr);
+        }
 
-        double ratio_scCp = captureRate / scatterRate;
-        double ratio_scCpErr = ratio_scCp * sqrt(pow(scatterErrRate / scatterRate, 2) + pow(captureErrRate / captureRate, 2));
-        double ratio_scCpTNcut = captureTNcutRate / scatterRate;
-        double ratio_scCpTNcutErr = ratio_scCpTNcut * sqrt(pow(scatterErrRate / scatterRate, 2) + pow(captureTNcutErrRate / captureTNcutRate, 2));
-        double ratio_cpCpTNcut = captureTNcutRate / captureRate;
-        double ratio_cpCpTNcutErr = ratio_cpCpTNcut * sqrt(pow(captureErrRate / captureRate, 2) + pow(captureTNcutErrRate / captureTNcutRate, 2));
-
-        vRatio_scCp.push_back(ratio_scCp);
-        vRatio_scCpErr.push_back(ratio_scCpErr);
-        vRatio_scCpTNcut.push_back(ratio_scCpTNcut);
-        vRatio_scCpTNcutErr.push_back(ratio_scCpTNcutErr);
-        vRatio_cpCpTNcut.push_back(ratio_cpCpTNcut);
-        vRatio_cpCpTNcutErr.push_back(ratio_cpCpTNcutErr);
-
-        // Extract ppm value from folder name
         TString folderName = folder[i];
-        TString ppmStr = folderName(0, folderName.Length() - 3); // Remove "ppm" suffix
-        double ppmValue = ppmStr.Atof();
-        vPpm.push_back(ppmValue);
+        TString ppmStr = folderName(0, folderName.Length() - 3);
+        vPpm.push_back(ppmStr.Atof());
     }
-
-    // --- count rate vs H content (capture / capture_TNcut / scatter) ---
-    vector<vector<double> *> countRateY = {&vCp, &vCpTNcut, &vSc};
-    vector<vector<double> *> countRateYErr = {&vCpErr, &vCpTNcutErr, &vScErr};
-    vector<Color_t> countRateColor = {kRed + 1, kGreen + 2, kBlue + 1};
-    vector<TString> countRateLabel = {"Capture", "Capture_TNcut", "Scatter"};
-
-    TMultiGraph *mgCountRate = new TMultiGraph();
-    mgCountRate->SetTitle("Count rate vs H content;H content (ppm);Count rate (s^{-1} cm^{-3})");
-    mgCountRate->SetMinimum(0);
-    TLegend *legCountRate = new TLegend(0.20, 0.20, 0.4, 0.38);
 
     size_t iZero = std::distance(vPpm.begin(), std::find(vPpm.begin(), vPpm.end(), 0.0));
-    TMultiGraph *mgCountRate_0ppmRatio = new TMultiGraph();
-    mgCountRate_0ppmRatio->SetTitle("Count rate (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ");
-    TLegend *legCountRate_0ppmRatio = new TLegend(0.20, 0.20, 0.4, 0.38);
 
-    for (size_t i = 0; i < countRateY.size(); ++i)
+    gStyle->SetPalette(kRainBow);
+    int nColors = gStyle->GetNumberOfColors();
+
+    TMultiGraph *mgCpLayer = new TMultiGraph();
+    mgCpLayer->SetTitle("Capture count rate per layer vs H content;H content (ppm);Count rate (s^{-1})");
+    TLegend *legCpLayer = new TLegend(0.18, 0.12, 0.45, 0.25);
+
+    TMultiGraph *mgRatioLayer = new TMultiGraph();
+    mgRatioLayer->SetTitle("Count rate ratio (capture layer / scatter total) vs H content;H content (ppm);Count rate ratio");
+    mgRatioLayer->SetMinimum(0);
+    TLegend *legRatioLayer = new TLegend(0.18, 0.12, 0.45, 0.25);
+
+    TMultiGraph *mgRatioLayer_0ppm = new TMultiGraph();
+    mgRatioLayer_0ppm->SetTitle("Count rate ratio (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ratio");
+    TLegend *legRatioLayer_0ppm = new TLegend(0.18, 0.75, 0.45, 0.88);
+
+    TMultiGraph *mgSigTimeLayer = new TMultiGraph();
+    mgSigTimeLayer->SetTitle(Form("Observation time for %.0f#sigma separation from 0 ppm;H content (ppm);Observation time (s)", nSigma));
+    TLegend *legSigTimeLayer = new TLegend(0.55, 0.75, 0.85, 0.88);
+
+    for (int z = 0; z < nSensThick; ++z)
     {
-        TGraphErrors *gr = new TGraphErrors(vPpm.size(), vPpm.data(),
-                                            countRateY.at(i)->data(), 0, countRateYErr.at(i)->data());
-        gr->SetMarkerColor(countRateColor.at(i));
-        gr->SetLineColor(countRateColor.at(i));
-        gr->SetMarkerStyle(20);
-        mgCountRate->Add(gr, "PL");
-        legCountRate->AddEntry(gr, countRateLabel.at(i), "lp");
+        Color_t col = gStyle->GetColorPalette(nSensThick > 1 ? static_cast<int>((0.1 + 0.8 * z / (nSensThick - 1)) * (nColors - 1)) : 0);
+        int mstyle = 20 + (z % 10);
 
-        // --- 0 ppm で規格化 ---
-        vector<double> &y = *countRateY.at(i);
-        vector<double> &yErr = *countRateYErr.at(i);
+        TGraphErrors *grCp = new TGraphErrors(vPpm.size(), vPpm.data(), vCpLayer[z].data(), 0, vCpLayerErr[z].data());
+        grCp->SetMarkerColor(col);
+        grCp->SetLineColor(col);
+        grCp->SetMarkerStyle(mstyle);
+        mgCpLayer->Add(grCp, "PL");
+        legCpLayer->AddEntry(grCp, zRegionLabels[z], "lp");
+
+        TGraphErrors *grRatio = new TGraphErrors(vPpm.size(), vPpm.data(), vRatioLayer[z].data(), 0, vRatioLayerErr[z].data());
+        grRatio->SetMarkerColor(col);
+        grRatio->SetLineColor(col);
+        grRatio->SetMarkerStyle(mstyle);
+        mgRatioLayer->Add(grRatio, "PL");
+        legRatioLayer->AddEntry(grRatio, zRegionLabels[z], "lp");
+
+        vector<double> &y = vRatioLayer[z];
+        vector<double> &yErr = vRatioLayerErr[z];
         double y0 = y.at(iZero), y0Err = yErr.at(iZero);
         vector<double> yNorm(y.size()), yNormErr(y.size());
         for (size_t j = 0; j < y.size(); ++j)
         {
-            yNorm.at(j) = y.at(j) / y0;
-            yNormErr.at(j) = yNorm.at(j) * sqrt(pow(yErr.at(j) / y.at(j), 2) + pow(y0Err / y0, 2));
+            yNorm.at(j) = (y0 > 0) ? y.at(j) / y0 : 0.0;
+            yNormErr.at(j) = (yNorm.at(j) > 0 && y.at(j) > 0)
+                                 ? yNorm.at(j) * sqrt(pow(yErr.at(j) / y.at(j), 2) + pow(y0Err / y0, 2))
+                                 : 0.0;
         }
         TGraphErrors *grNorm = new TGraphErrors(vPpm.size(), vPpm.data(), yNorm.data(), 0, yNormErr.data());
-        grNorm->SetMarkerColor(countRateColor.at(i));
-        grNorm->SetLineColor(countRateColor.at(i));
-        grNorm->SetMarkerStyle(20);
-        mgCountRate_0ppmRatio->Add(grNorm, "PL");
-        legCountRate_0ppmRatio->AddEntry(grNorm, countRateLabel.at(i), "lp");
-    }
+        grNorm->SetMarkerColor(col);
+        grNorm->SetLineColor(col);
+        grNorm->SetMarkerStyle(mstyle);
+        mgRatioLayer_0ppm->Add(grNorm, "PL");
+        legRatioLayer_0ppm->AddEntry(grNorm, zRegionLabels[z], "lp");
 
-    vector<TString> vCountRateRatioLabel = {"Capture / Scatter ", "Capture_TNcut / Scatter ", "Capture_TNcut  / Capture "};
-    vector<Color_t> vCountRateRatioColor = {kPink - 1, kSpring - 1, kOrange + 1};
-    vector<vector<double> *> vCountRateRatioY = {&vRatio_scCp, &vRatio_scCpTNcut, &vRatio_cpCpTNcut};
-    vector<vector<double> *> vCountRateRatioYErr = {&vRatio_scCpErr, &vRatio_scCpTNcutErr, &vRatio_cpCpTNcutErr};
+        double ratio0 = vRatioLayer[z].at(iZero);
+        double rateCap0 = vCpLayer[z].at(iZero);
+        double rateSc0 = vSc.at(iZero);
+        if (ratio0 <= 0 || rateCap0 <= 0 || rateSc0 <= 0)
+            continue;
 
-    TMultiGraph *mgCountRateRatio = new TMultiGraph();
-    mgCountRateRatio->SetTitle("Count rate ratio vs H content;H content (ppm);Count rate ratio");
-    mgCountRateRatio->SetMinimum(0);
-    TLegend *legCountRateRatio = new TLegend(0.20, 0.50, 0.5, 0.68);
-
-    TMultiGraph *mgCountRateRatio_0ppmRatio = new TMultiGraph();
-    mgCountRateRatio_0ppmRatio->SetTitle("Count rate ratio (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ratio ");
-    TLegend *legCountRateRatio_0ppmRatio = new TLegend(0.20, 0.50, 0.5, 0.68);
-
-    for (size_t i = 0; i < vCountRateRatioY.size(); ++i)
-    {
-        TGraphErrors *gr = new TGraphErrors(vPpm.size(), vPpm.data(),
-                                            vCountRateRatioY.at(i)->data(), 0, vCountRateRatioYErr.at(i)->data());
-        gr->SetMarkerColor(vCountRateRatioColor.at(i));
-        gr->SetLineColor(vCountRateRatioColor.at(i));
-        gr->SetMarkerStyle(20);
-        mgCountRateRatio->Add(gr, "PL");
-        legCountRateRatio->AddEntry(gr, vCountRateRatioLabel.at(i), "lp");
-        // --- 0 ppm で規格化 ---
-        vector<double> &y = *vCountRateRatioY.at(i);
-        vector<double> &yErr = *vCountRateRatioYErr.at(i);
-        double y0 = y.at(iZero), y0Err = yErr.at(iZero);
-        vector<double> yNorm(y.size()), yNormErr(y.size());
-        for (size_t j = 0; j < y.size(); ++j)
-        {
-            yNorm.at(j) = y.at(j) / y0;
-            yNormErr.at(j) = yNorm.at(j) * sqrt(pow(yErr.at(j) / y.at(j), 2) + pow(y0Err / y0, 2));
-        }
-        TGraphErrors *grNorm = new TGraphErrors(vPpm.size(), vPpm.data(), yNorm.data(), 0, yNormErr.data());
-        grNorm->SetMarkerColor(vCountRateRatioColor.at(i));
-        grNorm->SetLineColor(vCountRateRatioColor.at(i));
-        grNorm->SetMarkerStyle(20);
-        mgCountRateRatio_0ppmRatio->Add(grNorm, "PL");
-        legCountRateRatio_0ppmRatio->AddEntry(grNorm, vCountRateRatioLabel.at(i), "lp");
-    }
-
-    // === 0 ppm と各 ppm を Nσ で分離するために必要な観測時間 vs 体積 ===
-    const double volumeStart = 30.0; // cm^3
-    const double volumeStep = 30.0;   // cm^3
-    const double volumeEnd = 500.0;  // cm^3
-    vector<double> vVolume;
-    for (double volume = volumeStart; volume <= volumeEnd; volume += volumeStep)
-    {
-        vVolume.push_back(volume);
-    }
-    const int nVolumePoints = vVolume.size();
-
-    vector<Color_t> vSigTimePpmColor;
-    for (size_t j = 0; j < vPpm.size(); ++j)
-    {
-        vSigTimePpmColor.push_back(gStyle->GetColorPalette(j * gStyle->GetNumberOfColors() / vPpm.size()));
-    }
-
-    vector<TString> vSigTimeLabel = {"Capture / Scatter", "Capture_TNcut / Scatter", "Capture_TNcut / Capture"};
-    vector<vector<double> *> vSigTimeRatioY = {&vRatio_scCp, &vRatio_scCpTNcut, &vRatio_cpCpTNcut};
-    vector<vector<double> *> vSigTimeRateNumer = {&vCp, &vCpTNcut, &vCpTNcut}; // 各ratioの分子レート
-    vector<vector<double> *> vSigTimeRateDenom = {&vSc, &vSc, &vCp};           // 各ratioの分母レート
-
-    vector<TMultiGraph *> vMgSigTime;
-    vector<TLegend *> vLegSigTime;
-
-    for (size_t i = 0; i < vSigTimeLabel.size(); ++i)
-    {
-        TMultiGraph *mgSigTime = new TMultiGraph();
-        mgSigTime->SetTitle(Form("Observation time for %.0f#sigma separation vs 0 ppm (%s);Volume (cm^{3});Observation time (s)", nSigma, vSigTimeLabel.at(i).Data()));
-        TLegend *legSigTime = new TLegend(0.55, 0.70, 0.85, 0.88);
-        legSigTime->SetNColumns(2);
-
+        vector<double> vTimePpm, vTimeReq;
         for (size_t j = 0; j < vPpm.size(); ++j)
         {
             if (j == iZero)
                 continue;
 
-            double ratio0 = vSigTimeRatioY.at(i)->at(iZero);
-            double rateNumer0 = vSigTimeRateNumer.at(i)->at(iZero);
-            double rateDenom0 = vSigTimeRateDenom.at(i)->at(iZero);
-            double ratioX = vSigTimeRatioY.at(i)->at(j);
-            double rateNumerX = vSigTimeRateNumer.at(i)->at(j);
-            double rateDenomX = vSigTimeRateDenom.at(i)->at(j);
-
-            // captureRate/scatterRate等を真の値と仮定し、体積V・観測時間Tでのポアソン統計を
-            // その都度作り直す（過去のMC統計量eqTimeは引き継がない）
+            double ratioX = vRatioLayer[z].at(j);
+            double rateCapX = vCpLayer[z].at(j);
+            double rateScX = vSc.at(j);
             double delta = fabs(ratioX - ratio0);
-            double C0 = pow(ratio0, 2) * (1.0 / rateDenom0 + 1.0 / rateNumer0); // ratioErr(V,T)^2 = C0 / (V*T)
-            double CX = pow(ratioX, 2) * (1.0 / rateDenomX + 1.0 / rateNumerX);
-            double time1cm3 = pow(nSigma, 2) * (C0 + CX) / pow(delta, 2); // 1 cm^3 での必要観測時間 (s)
+            if (delta <= 0 || ratioX <= 0 || rateCapX <= 0)
+                continue;
 
-            vector<double> vTime(nVolumePoints);
-            for (int v = 0; v < nVolumePoints; ++v)
-            {
-                vTime.at(v) = time1cm3 / vVolume.at(v); // 観測時間は体積に反比例
-            }
+            // ratioErr(T)^2 = ratio^2 (1/rateCap + 1/rateSc) / T   (ポアソン統計、T は観測時間 s)
+            double C0 = pow(ratio0, 2) * (1.0 / rateSc0 + 1.0 / rateCap0);
+            double CX = pow(ratioX, 2) * (1.0 / rateScX + 1.0 / rateCapX);
+            double reqTime = pow(nSigma, 2) * (C0 + CX) / pow(delta, 2); // s
 
-            TGraph *gr = new TGraph(nVolumePoints, vVolume.data(), vTime.data());
-            gr->SetMarkerColor(vSigTimePpmColor.at(j));
-            gr->SetLineColor(vSigTimePpmColor.at(j));
-            gr->SetMarkerStyle(20 + j);
-            mgSigTime->Add(gr, "PL");
-            legSigTime->AddEntry(gr, folder.at(j), "lp");
+            vTimePpm.push_back(vPpm.at(j));
+            vTimeReq.push_back(reqTime);
         }
+        if (vTimePpm.empty())
+            continue;
 
-        vMgSigTime.push_back(mgSigTime);
-        vLegSigTime.push_back(legSigTime);
+        TGraph *grTime = new TGraph(vTimePpm.size(), vTimePpm.data(), vTimeReq.data());
+        grTime->SetMarkerColor(col);
+        grTime->SetLineColor(col);
+        grTime->SetMarkerStyle(mstyle);
+        mgSigTimeLayer->Add(grTime, "PL");
+        legSigTimeLayer->AddEntry(grTime, zRegionLabels[z], "lp");
     }
+
+    TGraphErrors *grSc = new TGraphErrors(vPpm.size(), vPpm.data(), vSc.data(), 0, vScErr.data());
+    grSc->SetMarkerColor(kBlack);
+    grSc->SetLineColor(kBlack);
+    grSc->SetMarkerStyle(24);
+    mgCpLayer->Add(grSc, "PL");
+    legCpLayer->AddEntry(grSc, "Scatter (total)", "lp");
 
     constexpr Double_t xmin = 5;    // H (ppm)
     constexpr Double_t xmax = 2e+4; // H (ppm)
 
     // Draw
-    /*Color Palette*/
-    gStyle->SetPalette(kBird);
-    int nColors = gStyle->GetNumberOfColors();
-    vector<Color_t> colorPalette;
-    for (size_t i = 0; i < vHistcpPosZ.size(); ++i)
-    {
-        colorPalette.push_back(gStyle->GetColorPalette(i * nColors / vHistcpPosZ.size()));
-    }
     vector<TCanvas *> vCan;
     {
-        // --- count rate vs H content ---
-        TCanvas *cCountRate = new TCanvas("cCountRate", "Count rate vs H content", 800, 600);
-        cCountRate->SetLogx();
-        mgCountRate->SetMinimum(0);
-        mgCountRate->Draw("A");
-        legCountRate->Draw();
-        vCan.push_back(cCountRate);
+        TCanvas *cCpLayer = new TCanvas("cCpLayer", "Capture count rate per layer vs H content", 800, 600);
+        cCpLayer->SetLogx();
+        cCpLayer->SetLogy();
+        mgCpLayer->Draw("A");
+        mgCpLayer->GetXaxis()->SetLimits(xmin, xmax);
+        legCpLayer->Draw();
+        vCan.push_back(cCpLayer);
 
-        // --- count rate (normalized to 0 ppm) vs H content ---
-        TCanvas *cCountRate_0ppmRatio = new TCanvas("cCountRate_0ppmRatio", "Count rate (normalized to 0 ppm) vs H content", 800, 600);
-        cCountRate_0ppmRatio->SetLogx();
-        mgCountRate_0ppmRatio->SetMinimum(0);
-        mgCountRate_0ppmRatio->Draw("A");
-        legCountRate_0ppmRatio->Draw();
-        vCan.push_back(cCountRate_0ppmRatio);
+        TCanvas *cRatioLayer = new TCanvas("cRatioLayer", "Count rate ratio per layer vs H content", 800, 600);
+        cRatioLayer->SetLogx();
+        mgRatioLayer->SetMinimum(0);
+        mgRatioLayer->Draw("A");
+        mgRatioLayer->GetXaxis()->SetLimits(xmin, xmax);
+        legRatioLayer->Draw();
+        vCan.push_back(cRatioLayer);
 
-        // --- count rate ratio vs H content ---
-        TCanvas *cCountRateRatio = new TCanvas("cCountRateRatio", "Count rate ratio vs H content", 800, 600);
-        cCountRateRatio->SetLogx();
-        mgCountRateRatio->SetMinimum(0);
-        mgCountRateRatio->Draw("A");
-        legCountRateRatio->Draw();
-        vCan.push_back(cCountRateRatio);
+        TCanvas *cRatioLayer_0ppm = new TCanvas("cRatioLayer_0ppm", "Count rate ratio per layer (normalized to 0 ppm)", 800, 600);
+        cRatioLayer_0ppm->SetLogx();
+        mgRatioLayer_0ppm->Draw("A");
+        mgRatioLayer_0ppm->GetXaxis()->SetLimits(xmin, xmax);
+        legRatioLayer_0ppm->Draw();
+        vCan.push_back(cRatioLayer_0ppm);
 
-        // --- count rate ratio (normalized to 0 ppm) vs H content ---
-        TCanvas *cCountRateRatio_0ppmRatio = new TCanvas("cCountRateRatio_0ppmRatio", "Count rate ratio (normalized to 0 ppm) vs H content", 800, 600);
-        cCountRateRatio_0ppmRatio->SetLogx();
-        mgCountRateRatio_0ppmRatio->SetMinimum(0);
-        mgCountRateRatio_0ppmRatio->Draw("A");
-        legCountRateRatio_0ppmRatio->Draw();
-        vCan.push_back(cCountRateRatio_0ppmRatio);
+        TCanvas *cSigTimeLayer = new TCanvas("cSigTimeLayer", "Observation time for Nsigma separation vs H content", 800, 600);
+        cSigTimeLayer->SetLogx();
+        cSigTimeLayer->SetLogy();
+        cSigTimeLayer->SetGridx(0);
+        cSigTimeLayer->SetGridy(0);
+        mgSigTimeLayer->Draw("A");
+        mgSigTimeLayer->GetXaxis()->SetLimits(xmin, xmax);
+        legSigTimeLayer->Draw();
+        vCan.push_back(cSigTimeLayer);
 
-        // --- observation time vs volume (0 ppm vs each ppm, Nσ separation), 比率ごとに別キャンバス ---
-        for (size_t i = 0; i < vMgSigTime.size(); ++i)
+        vector<double> vTimeLine{60, 3600, 3600 * 24, 3600 * 24 * 7};
+        vector<TString> vTimeText{"1m", "1h", "1d", "1w"};
+        for (size_t k = 0; k < vTimeLine.size(); ++k)
         {
-            TCanvas *cSigTime = new TCanvas(Form("cSigTime_%zu", i), vSigTimeLabel.at(i), 800, 600);
-            cSigTime->SetGridx(0);
-            cSigTime->SetGridy(0);
-            gPad->SetLogy();
-            vMgSigTime.at(i)->Draw("A");
-            vLegSigTime.at(i)->Draw();
-            vCan.push_back(cSigTime);
-
-            vector<double> vTime{60, 3600, 3600 * 24, 3600 * 24 * 7};
-            vector<TString> vText{"1m", "1h", "1d", "1w"};
-            for (size_t k = 0; k < vTime.size(); ++k)
-            {
-                TLine *l = new TLine(volumeStart, vTime[k], volumeEnd, vTime[k]);
-                l->SetLineColor(kGray + 1);
-                l->SetLineStyle(kDashed);
-                l->Draw();
-
-                TText *t = new TText(volumeStart + 10, vTime[k] * 0.5, vText[k]);
-                t->Draw();
-            }
+            TLine *l = new TLine(xmin, vTimeLine[k], xmax, vTimeLine[k]);
+            l->SetLineColor(kGray + 1);
+            l->SetLineStyle(kDashed);
+            l->Draw();
+            TText *t = new TText(xmin * 1.2, vTimeLine[k] * 0.5, vTimeText[k]);
+            t->Draw();
         }
     }
 

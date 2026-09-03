@@ -53,7 +53,7 @@ void DetectPosition()
 
         // energy window
         constexpr double scatterEdepLow = 1.0; // MeV
-        // constexpr double scatterEdepHigh = 3.0; // MeV
+        constexpr double scatterEdepHigh = 3.0; // MeV
         constexpr double captureEdepLow = 4.5;  // MeV
         constexpr double captureEdepHigh = 5.0; // MeV
 
@@ -323,7 +323,7 @@ void DetectPosition()
                 if (isScatterDepositStep)
                 {
                     acc.scEdepSum += fEdep;
-                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
+                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow && acc.scEdepSum < scatterEdepHigh)
                     {
                         acc.scatterflag = true;
                         acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
