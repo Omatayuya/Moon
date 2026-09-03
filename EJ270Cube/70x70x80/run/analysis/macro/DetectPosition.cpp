@@ -45,8 +45,11 @@ void DetectPosition()
 
         const string TargetParticle = "neutron";
         // const Double_t irrArea = pow(450, 2);                    // irradiation surface area (cm^2) for Proton, Helium
-        const Double_t DetectorOffsetZ = 400; // Detector offset in Z (mm)
-        const Double_t irrArea = 600 * 600;   // irradiation surface area (cm^2) for Proton, Helium
+        const Double_t DetectorOffsetZ = 460;   // Detector offset in Z (mm)
+        const Double_t irrArea = 600 * 600;     // irradiation surface area (cm^2) for Proton, Helium
+        constexpr Double_t EJ270HalfWidth = 35; // EJ270 width (mm)
+
+        constexpr double sideCut = 5; // mm, 20mm以内の範囲でのみカウントする
 
         // energy window
         constexpr double scatterEdepLow = 1.0; // MeV
@@ -56,6 +59,15 @@ void DetectPosition()
 
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
+
+        constexpr double fidHalfWidth = EJ270HalfWidth - sideCut; // mm, 50mmの検出器のうち、20mm以内の範囲を除いた30mmの範囲でカウントする
+
+        vector<double> cdPlanePosXY = {
+            10 + DetectorOffsetZ,
+            70 + DetectorOffsetZ,
+        }; // XY平面 (法線: Z軸) の位置 [mm]
+        vector<double> cdPlanePosZX = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut}; // ZX平面 (法線: Y軸) の位置 [mm]
+        vector<double> cdPlanePosZY = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut}; // ZY平面 (法線: X軸) の位置 [mm]
 
         for (auto axis : {"X", "Y", "Z"})
         {
@@ -183,7 +195,7 @@ void DetectPosition()
 
         double primEnergy;
         int eventID, fPID, fPPID;
-        char fpname[256], fCProc[256];
+        char chamberNb[256], fpname[256], fCProc[256];
         char collection[256], fPreProc[256], fPostProc[256];
         double fPreKinE, fPostKinE, fEdep, fGTime;
         double fPrePosX, fPrePosY, fPrePosZ, fPostPosX, fPostPosY, fPostPosZ;
@@ -207,15 +219,21 @@ void DetectPosition()
         HitTree->SetBranchAddress("PostPosX", &fPostPosX);
         HitTree->SetBranchAddress("PostPosY", &fPostPosY);
         HitTree->SetBranchAddress("PostPosZ", &fPostPosZ);
-        
+
         const vector<string> captureStepParticles = {"alpha", "triton"};
         // const vector<string> scatterStepParticles = {"proton", "C12", "O16", "N14"};
         const vector<string> scatterStepParticles = {"proton"};
+
+        set<int> killedEvents;
 
         int nHits = HitTree->GetEntries();
         for (int i = 0; i < nHits; ++i)
         {
             HitTree->GetEntry(i);
+            if (killedEvents.count(eventID) > 0)
+            {
+                continue;
+            }
 
             // double fEdepQ = 0.0;     // Initialize quenched energy deposit
             // const double kB = 0.012; // Birks' constant (mm/MeV)
@@ -232,53 +250,92 @@ void DetectPosition()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            EventChamberID eventChamberID{eventID, primEnergy, string(chamberNb)};
-            auto &acc = DetectorchamberMap[eventChamberID];
-            acc.edepSum += fEdep;
-
-            /* screening conditions for Capture & Scatter event*/
-            const bool isCaptureParticle =
-                find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
-            const bool isScatterParticle =
-                find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
-
-            const bool isCaptureDepositStep =
-                (fEdep > 0.0) &&
-                isCaptureParticle &&
-                (string(fCProc) == "neutronInelastic");
-            const bool isScatterDepositStep =
-                (fEdep > 0.0) &&
-                isScatterParticle &&
-                // isPrimaryNeutronSecondary &&
-                (string(fCProc) == "hadElastic");
-
-            if (isCaptureDepositStep)
+            if (string(fpname) == "neutron")
             {
-                acc.cpEdepSum += fEdep;
-
-                if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
+                bool cdAbsorbed = false;
+                for (double zPlane : cdPlanePosXY) // XY平面 (法線: Z軸)
                 {
-                    acc.captureflag = true;
-                    acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
-                    acc.cpPosX = fPrePosX;
-                    acc.cpPosY = fPrePosY;
-                    acc.cpPosZ = fPrePosZ;
+                    if ((fPrePosZ - zPlane) * (fPostPosZ - zPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                    {
+                        cdAbsorbed = true;
+                    }
+                }
+                for (double yPlane : cdPlanePosZX) // ZX平面 (法線: Y軸)
+                {
+                    if ((fPrePosY - yPlane) * (fPostPosY - yPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                    {
+                        cdAbsorbed = true;
+                    }
+                }
+                for (double xPlane : cdPlanePosZY) // ZY平面 (法線: X軸)
+                {
+                    if ((fPrePosX - xPlane) * (fPostPosX - xPlane) < 0.0 && fPreKinE <= TNEnergyCut)
+                    {
+                        cdAbsorbed = true;
+                    }
+                }
+                if (cdAbsorbed)
+                {
+                    killedEvents.insert(eventID);
+                    continue;
                 }
             }
 
-            if (isScatterDepositStep)
+            if (string(collection) == "TrackerHitsCollection")
             {
-                acc.scEdepSum += fEdep;
-                if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
+                if (fabs(fPrePosX) > fidHalfWidth || fabs(fPrePosY) > fidHalfWidth)
+                    continue;
+
+                EventChamberID eventChamberID{eventID, primEnergy, string(collection)};
+                auto &acc = DetectorchamberMap[eventChamberID];
+                acc.edepSum += fEdep;
+
+                /* screening conditions for Capture & Scatter event*/
+                const bool isCaptureParticle =
+                    find(captureStepParticles.begin(), captureStepParticles.end(), fpname) != captureStepParticles.end();
+                const bool isScatterParticle =
+                    find(scatterStepParticles.begin(), scatterStepParticles.end(), fpname) != scatterStepParticles.end();
+
+                const bool isCaptureDepositStep =
+                    (fEdep > 0.0) &&
+                    isCaptureParticle &&
+                    (string(fCProc) == "neutronInelastic");
+                const bool isScatterDepositStep =
+                    (fEdep > 0.0) &&
+                    isScatterParticle &&
+                    // isPrimaryNeutronSecondary &&
+                    (string(fCProc) == "hadElastic");
+
+                if (isCaptureDepositStep)
                 {
-                    acc.scatterflag = true;
-                    acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
-                    acc.scPosX = fPrePosX;
-                    acc.scPosY = fPrePosY;
-                    acc.scPosZ = fPrePosZ;
+                    acc.cpEdepSum += fEdep;
+
+                    if (acc.captureflag == false && acc.cpEdepSum > captureEdepLow && acc.cpEdepSum < captureEdepHigh)
+                    {
+                        acc.captureflag = true;
+                        acc.cpTriggerTime = min(acc.cpTriggerTime, fGTime);
+                        acc.cpPosX = fPrePosX;
+                        acc.cpPosY = fPrePosY;
+                        acc.cpPosZ = fPrePosZ;
+                    }
+                }
+
+                if (isScatterDepositStep)
+                {
+                    acc.scEdepSum += fEdep;
+                    if (acc.scatterflag == false && acc.scEdepSum > scatterEdepLow)
+                    {
+                        acc.scatterflag = true;
+                        acc.scTriggerTime = min(acc.scTriggerTime, fGTime);
+                        acc.scPosX = fPrePosX;
+                        acc.scPosY = fPrePosY;
+                        acc.scPosZ = fPrePosZ;
+                    }
                 }
             }
         }
+
+        cout << "Virtual Cd layer absorbed: " << killedEvents.size() << " / " << nEvents << " events" << endl;
 
         for (const auto &entry : DetectorchamberMap)
         {
@@ -289,132 +346,136 @@ void DetectPosition()
         DetectorchamberMap.clear();
         const int entries = DetectorchamberTree->GetEntries();
 
+        // ==================================================================
         int BinWidthZ = 5; // mm
         int minZ = 0;      // mm
-        int maxZ = 200;    // mm
+        int maxZ = 80;     // mm
         int nBinsZ = (maxZ - minZ) / BinWidthZ;
         int BinWidthXY = 5; // mm
-        int minXY = -50;    // mm
-        int maxXY = 50;     // mm
+        int minXY = -35;    // mm
+        int maxXY = 35;     // mm
         int nBinsXY = (maxXY - minXY) / BinWidthXY;
 
         // Match vH_ip_theta's log-uniform energy binning (see B2RunAction.cc)
-        constexpr int nEnergyBins = 500;
+        constexpr int nEnergyBins = 200;
         constexpr double energyMin = 1e-10; // MeV
         constexpr double energyMax = 1e4;   // MeV
         double energyBins[nEnergyBins + 1];
         for (int i = 0; i <= nEnergyBins; ++i)
             energyBins[i] = energyMin * pow(energyMax / energyMin, static_cast<double>(i) / nEnergyBins);
 
-        TH1F *h1_cpposZ = new TH1F("h1_cpposZ", Form("Capture Position Z ;Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
-        TH1F *h1_cpposZ_TNcut = new TH1F("h1_cpposZ_TNcut", Form("Capture Position Z  (TN cut / %.1f eV <);Z (mm);Count rate (s^{-1} %d mm^{-1})", TNEnergyCut * 1e6, BinWidthZ), nBinsZ, minZ, maxZ);
-        TH2D *h2_cpposZ = new TH2D("h2_cpposZ", Form("Capture Position Z; Energy (MeV); Z (mm); Count rate"), nEnergyBins, energyBins, nBinsZ, minZ, maxZ);
-        TH2D *h2_cpposXY = new TH2D("h2_cpposXY", Form("Capture Position XY Distribution;X (mm);Y (mm);Count rate (s^{-1} %d #times %d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-        TH2D *h2_cpposXY_TNcut = new TH2D("h2_cpposXY_TNcut", Form("Capture Position XY Distribution (TN cut / %.1f eV <);X (mm);Y (mm);Count rate (s^{-1} %d#times%d mm^{-2})", TNEnergyCut * 1e6, BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-        TH1F *h1_scposZ = new TH1F("h1_scposZ", Form("Scatter Position Z Distribution;Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
-        TH2D *h2_scposXY = new TH2D("h2_scposXY", Form("Scatter Position XY Distribution;X (mm);Y (mm);Count rate (s^{-1} %d#times%d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-
+        // Thermal, epithermala and fast neutron bins
         constexpr int nEBins = 4;
         const double primEnergyEdges[nEBins + 1] = {0.0, 5e-7, 1e-3, 1.0, numeric_limits<double>::infinity()};
         const TString primEnergyLabels[nEBins] = {"E < 0.5 eV", "0.5 eV #leq E < 1 keV", "1 keV #leq E < 1 MeV", "E #geq 1 MeV"};
         const int primEnergyColors[nEBins] = {kOrange + 8, kGreen - 7, kGreen + 2, kBlue};
-        vector<TH1F *> vH_cpposZ_byE(nEBins);
+
+        // Sensor thickness bins
+        vector<double> vSensThick = {0, 5, 10, 20, 40, 60, 70, 75, 80};
+        const int nSensThick = vSensThick.size() - 1;
+        vector<TString> zRegionLabels;
+        for (int z = 0; z < nSensThick; ++z)
+        {
+            zRegionLabels.push_back(Form("%.0f <= Z < %.0f ", vSensThick[z], vSensThick[z + 1]));
+        }
+        constexpr double xFidCutLow = -(EJ270HalfWidth - sideCut); // mm, フィデューシャルカット下限
+        constexpr double xFidCutHigh = EJ270HalfWidth - sideCut;   // mm, フィデューシャルカット上限
+        // ==================================================================
+        TH2D *h2_cpposZ = new TH2D("h2_cpposZ", Form("Capture Position Z; Energy (MeV); Z (mm); Count rate"), nEnergyBins, energyBins, nBinsZ, minZ, maxZ);
+        TH1F *h1_cpposZ = new TH1F("h1_cpposZ", Form("Capture Position Z ;Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
+        vector<TH1F *> vh1_cpposZ_byE(nEBins);
         for (int e = 0; e < nEBins; ++e)
         {
             TString hname = Form("h1_cpposZ_E%d", e);
-            vH_cpposZ_byE[e] = new TH1F(hname,
-                                        Form("Capture Position Z (%s);Z (mm);Count rate (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
-                                        nBinsZ, minZ, maxZ);
+            vh1_cpposZ_byE[e] = new TH1F(hname,
+                                         Form("Capture Position Z (%s);Z (mm);Count rate (s^{-1} %d mm^{-1})", primEnergyLabels[e].Data(), BinWidthZ),
+                                         nBinsZ, minZ, maxZ);
+            vh1_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
         }
+        TH2D *h2_cpposXY = new TH2D("h2_cpposXY", Form("Capture Position XY Distribution;X (mm);Y (mm);Count rate (s^{-1} %d #times %d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
+        vector<TH2D *> vh2_cpposY(nSensThick);
+        vector<TH1D *> vh1_cpposY(nSensThick);
+        vector<vector<TH1D *>> vvh1_cpposY_byE(nSensThick, vector<TH1D *>(nEBins));
+        vector<TH1D *> vh1_cpSpectrum(nSensThick);
+        vector<TH1D *> vh1_cpSpectrum_ind(nSensThick);
+        TArrayI savedPalette = TColor::GetPalette();
+        gStyle->SetPalette(kRainBow);
+        for (int z = 0; z < nSensThick; ++z)
+        {
+            TString hname_cpposEY = Form("h2_cpposEY_Z%d", z);
+            vh2_cpposY[z] = new TH2D(hname_cpposEY,
+                                     Form("Capture Position Y (%s, %.0f < X < %.0f );Energy (MeV);Y (mm);Count rate",
+                                          zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
+                                     nEnergyBins, energyBins, nBinsXY, minXY, maxXY);
 
-        // Z region bins for capture energy spectra (projected onto energy axis)
-        vector<double> zProjEdges = {0, 5, 10, 20, 40, 160, 200};
-        const int nZProjRegions = zProjEdges.size() - 1;
-        vector<TString> zProjLabels;
-        for (int z = 0; z < nZProjRegions; ++z)
-        {
-            zProjLabels.push_back(Form("%.1f #leq Z < %.1f mm", zProjEdges[z], zProjEdges[z + 1]));
-        }
-        vector<TH1D *> vH1_cpposE_byZ(nZProjRegions);
-        for (int z = 0; z < nZProjRegions; ++z)
-        {
-            TString hname = Form("h1_cpposE_Z%d", z);
-            vH1_cpposE_byZ[z] = new TH1D(hname,
-                                         Form("Capture Energy Spectrum (%s);Energy (MeV);Count rate (s^{-1})", zProjLabels[z].Data()),
+            TString hname_cpposY = Form("h1_cpposY_Z%d", z);
+            vh1_cpposY[z] = new TH1D(hname_cpposY,
+                                     Form("Capture Position Y (%s, %.0f < X < %.0f );Y (mm);Count rate (s^{-1} %d mm^{-1})",
+                                          zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh, BinWidthXY),
+                                     nBinsXY, minXY, maxXY);
+
+            TString hname_cpSpectrum = Form("h1_cpposEfid_Z%d", z);
+            vh1_cpSpectrum[z] = new TH1D(hname_cpSpectrum,
+                                         Form("Capture Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
+                                              zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
                                          nEnergyBins, energyBins);
-            vH1_cpposE_byZ[z]->SetLineWidth(2);
-            vH1_cpposE_byZ[z]->SetLineColor(TColor::GetColorPalette(
-                static_cast<int>(1.0 * z * (TColor::GetNumberOfColors() - 1) / (nZProjRegions - 1))));
-        }
+            vh1_cpSpectrum[z]->SetLineColor(TColor::GetColorPalette(
+                static_cast<int>(1.0 * z * (TColor::GetNumberOfColors() - 1) / (nSensThick - 1))));
 
-        // Z region bins for capture XY histograms
-        vector<double> zRegionEdges = {0, 40, 160, 200};
-        const int nZRegions = zRegionEdges.size() - 1;
-        vector<TString> zRegionLabels;
-        for (int z = 0; z < nZRegions; ++z)
-        {
-            zRegionLabels.push_back(Form("%.0f <= Z < %.0f ", zRegionEdges[z], zRegionEdges[z + 1]));
-        }
-        vector<TH2D *> vH2_cpposXY_byZ(nZRegions);
-        for (int z = 0; z < nZRegions; ++z)
-        {
-            TString hname = Form("h2_cpposXY_Z%d", z);
-            vH2_cpposXY_byZ[z] = new TH2D(hname,
-                                          Form("Capture Position XY Distribution (%s);X (mm);Y (mm);Count rate (s^{-1} %d#times%d mm^{-2})",
-                                               zRegionLabels[z].Data(), BinWidthXY, BinWidthXY),
-                                          nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-        }
-        constexpr double xFidCutLow = -30.0; // mm, フィデューシャルカット下限
-        constexpr double xFidCutHigh = 30.0; // mm, フィデューシャルカット上限
-        constexpr int nEnergyBins_cppos = 200;
-        for (int i = 0; i <= nEnergyBins_cppos; ++i)
-            energyBins[i] = energyMin * pow(energyMax / energyMin, static_cast<double>(i) / nEnergyBins_cppos);
-        vector<TH1D *> vH1_cpposY_byZ(nZRegions);
-        for (int z = 0; z < nZRegions; ++z)
-        {
-            TString hname = Form("h1_cpposY_Z%d", z);
-            vH1_cpposY_byZ[z] = new TH1D(hname,
-                                         Form("Capture Position Y (%s, %.0f < X < %.0f );Y (mm);Count rate (s^{-1} %d mm^{-1})",
-                                              zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh, BinWidthXY),
-                                         nBinsXY, minXY, maxXY);
-        }
-        vector<TH2D *> vH2_cpposEY_byZ(nZRegions);
-        for (int z = 0; z < nZRegions; ++z)
-        {
-            TString hname = Form("h2_cpposEY_Z%d", z);
-            vH2_cpposEY_byZ[z] = new TH2D(hname,
-                                          Form("Capture Position Y (%s, %.0f < X < %.0f );Energy (MeV);Y (mm);Count rate",
-                                               zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
-                                          nEnergyBins_cppos, energyBins, nBinsXY, minXY, maxXY);
-        }
-        vector<vector<TH1D *>> vH1_cpposY_byZ_byE(nZRegions, vector<TH1D *>(nEBins));
-        for (int z = 0; z < nZRegions; ++z)
-        {
+            TString hname_cpSpectrum_ind = Form("h1_cpposEfid_Z%d_ind", z);
+            vh1_cpSpectrum_ind[z] = new TH1D(hname_cpSpectrum_ind,
+                                             Form("Capture Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
+                                                  zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
+                                             nEnergyBins, energyBins);
+
             for (int e = 0; e < nEBins; ++e)
             {
-                TString hname = Form("h1_cpposY_Z%d_E%d", z, e);
-                vH1_cpposY_byZ_byE[z][e] = new TH1D(hname,
-                                                    Form("Capture Position Y (%s, %s);Y (mm);Count rate (s^{-1} %d mm^{-1})",
-                                                         zRegionLabels[z].Data(), primEnergyLabels[e].Data(), BinWidthXY),
-                                                    nBinsXY, minXY, maxXY);
-                vH1_cpposY_byZ_byE[z][e]->SetLineColor(primEnergyColors[e]);
+                TString hname_cpposY_byE = Form("h1_cpposY_Z%d_E%d", z, e);
+                vvh1_cpposY_byE[z][e] = new TH1D(hname_cpposY_byE,
+                                                Form("Capture Position Y (%s, %s);Y (mm);Count rate (s^{-1} %d mm^{-1})",
+                                                     zRegionLabels[z].Data(), primEnergyLabels[e].Data(), BinWidthXY),
+                                                nBinsXY, minXY, maxXY);
+                vvh1_cpposY_byE[z][e]->SetLineColor(primEnergyColors[e]);
             }
         }
+        gStyle->SetPalette(savedPalette.GetSize(), savedPalette.GetArray());
+        TH1F *h1_scposZ = new TH1F("h1_scposZ", Form("Scatter Position Z Distribution;Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
+        TH2D *h2_scposXY = new TH2D("h2_scposXY", Form("Scatter Position XY Distribution;X (mm);Y (mm);Count rate (s^{-1} %d#times%d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
 
+        // vvHist: vector of vector of pairs of histogram and legend label
         using HistLegPair = pair<TH1 *, TString>;
         vector<vector<HistLegPair>> vvHist;
         vvHist.push_back({{h2_cpposZ, "Capture Position Z"}});
-        vvHist.push_back({{h2_cpposXY, "Capture Position XY"}});
-        for (int z = 0; z < nZRegions; ++z)
         {
-            // vvHist.push_back({{vH2_cpposXY_byZ[z], Form("Capture Position XY (%s)", zRegionLabels[z].Data())}});
-            vvHist.push_back({{vH2_cpposEY_byZ[z], Form("Capture Position EY (%s)", zRegionLabels[z].Data())}});
-
-            vH1_cpposY_byZ[z]->SetLineColor(kBlack);
+            h1_cpposZ->SetLineColor(kBlack);
             vector<HistLegPair> group;
-            group.push_back({vH1_cpposY_byZ[z], "Total"});
+            group.push_back({h1_cpposZ, "Total"});
             for (int e = 0; e < nEBins; ++e)
-                group.push_back({vH1_cpposY_byZ_byE[z][e], primEnergyLabels[e]});
+                group.push_back({vh1_cpposZ_byE[e], primEnergyLabels[e]});
+            vvHist.push_back(group);
+        }
+        vvHist.push_back({{h2_cpposXY, "Capture Position XY"}});
+        for (int z = 0; z < nSensThick; ++z)
+        {
+            vvHist.push_back({{vh2_cpposY[z], Form("Capture Position EY (%s)", zRegionLabels[z].Data())}});
+
+            vh1_cpposY[z]->SetLineColor(kBlack);
+            vector<HistLegPair> group;
+            group.push_back({vh1_cpposY[z], "Total"});
+            for (int e = 0; e < nEBins; ++e)
+            {
+                group.push_back({vvh1_cpposY_byE[z][e], primEnergyLabels[e]});
+            }
+            vvHist.push_back({{vh1_cpSpectrum_ind[z], Form("Capture Energy (%s, %.0f < X < %.0f)", zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh)}});
+            vvHist.push_back(group);
+        }
+        {
+            vh1_cpSpectrum[0]->SetTitle("Capture Energy by Z Region ;Energy (MeV);Count rate (s^{-1} bin^{-1})");
+            vector<HistLegPair> group;
+            for (int z = 0; z < nSensThick; ++z)
+            {
+                group.push_back({vh1_cpSpectrum[z], zRegionLabels[z]});
+            }
             vvHist.push_back(group);
         }
         vvHist.push_back({{h1_scposZ, "Scatter Position Z"}});
@@ -428,53 +489,43 @@ void DetectPosition()
             double capturePosY = chamberEventData.cpPosY;                   // Convert m to mm
             if (chamberEventData.captureflag)
             {
-                h1_cpposZ->Fill(capturePosZ);
                 h2_cpposZ->Fill(eventChamberID.primEnergy, capturePosZ);
-                h2_cpposXY->Fill(capturePosX, capturePosY);
-                for (int z = 0; z < nZRegions; ++z)
-                {
-                    if (capturePosZ >= zRegionEdges[z] && capturePosZ < zRegionEdges[z + 1])
-                    {
-                        vH2_cpposXY_byZ[z]->Fill(capturePosX, capturePosY);
-                        if (capturePosX > xFidCutLow && capturePosX < xFidCutHigh)
-                        {
-                            vH1_cpposY_byZ[z]->Fill(capturePosY);
-                            vH2_cpposEY_byZ[z]->Fill(eventChamberID.primEnergy, capturePosY);
-                            for (int e = 0; e < nEBins; ++e)
-                            {
-                                if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
-                                {
-                                    vH1_cpposY_byZ_byE[z][e]->Fill(capturePosY);
-                                    break;
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
 
-                for (int z = 0; z < nZProjRegions; ++z)
-                {
-                    if (capturePosZ >= zProjEdges[z] && capturePosZ < zProjEdges[z + 1])
-                    {
-                        vH1_cpposE_byZ[z]->Fill(eventChamberID.primEnergy);
-                        break;
-                    }
-                }
-
-                if (eventChamberID.primEnergy > TNEnergyCut) // TN cut
-                {
-                    h1_cpposZ_TNcut->Fill(capturePosZ);
-                    h2_cpposXY_TNcut->Fill(capturePosX, capturePosY);
-                }
-
-                // primEnergyで分岐してFill
+                // Z(position-axis) projection
+                h1_cpposZ->Fill(capturePosZ);
                 for (int e = 0; e < nEBins; ++e)
                 {
                     if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
                     {
-                        vH_cpposZ_byE[e]->Fill(capturePosZ);
+                        vh1_cpposZ_byE[e]->Fill(capturePosZ);
                         break;
+                    }
+                }
+
+                h2_cpposXY->Fill(capturePosX, capturePosY);
+
+                // separate by thickness of sensitive layer
+                for (int z = 0; z < nSensThick; ++z)
+                {
+                    if (capturePosZ >= vSensThick[z] && capturePosZ < vSensThick[z + 1])
+                    {
+                        if (capturePosX > xFidCutLow && capturePosX < xFidCutHigh)
+                        {
+                            vh2_cpposY[z]->Fill(eventChamberID.primEnergy, capturePosY);
+
+                            // Y(position-axis) projection
+                            vh1_cpposY[z]->Fill(capturePosY);
+                            for (int e = 0; e < nEBins; ++e)
+                            {
+                                if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
+                                {
+                                    vvh1_cpposY_byE[z][e]->Fill(capturePosY);
+                                }
+                            }
+                            // Energy projection
+                            vh1_cpSpectrum[z]->Fill(eventChamberID.primEnergy);
+                            vh1_cpSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
+                        }
                     }
                 }
             }
@@ -524,58 +575,14 @@ void DetectPosition()
             vCan.push_back(c1);
         }
 
-        TCanvas *cCpposZByE = new TCanvas("cCpposZByE", "Capture Position Z by Primary Energy", 800, 600);
-        gPad->SetGridx();
-        gPad->SetGridy();
-        double yMaxE = 0;
-        for (int e = 0; e < nEBins; ++e)
-        {
-            vH_cpposZ_byE[e]->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
-        }
-        TLegend *legE = new TLegend(0.55, 0.7, 0.88, 0.88);
-        h1_cpposZ->Scale(1.0 / eqTime); // 他のヒストグラムと同様にcps換算
-        h1_cpposZ->SetLineColor(kBlack);
-        h1_cpposZ->SetMinimum(0);
-        h1_cpposZ->Draw("HIST E");
-        legE->AddEntry(h1_cpposZ, "Total", "l");
-        for (int e = 0; e < nEBins; ++e)
-        {
-            vH_cpposZ_byE[e]->SetLineColor(primEnergyColors[e]);
-            // vH_cpposZ_byE[e]->SetMaximum(yMaxE * 1.3);
-            vH_cpposZ_byE[e]->Draw(e == 0 ? "HIST E SAME" : "HIST E SAME");
-            legE->AddEntry(vH_cpposZ_byE[e], primEnergyLabels[e], "l");
-        }
-        legE->Draw();
-        vCan.push_back(cCpposZByE);
-
-        TCanvas *cCpposEByZ = new TCanvas("cCpposEByZ", "Capture Energy Spectrum by Z Region", 800, 600);
-        gPad->SetLogx();
-        // gPad->SetLogy();
-        double yMaxEZ = 0;
-        for (int z = 0; z < nZProjRegions; ++z)
-        {
-            double thickness = zProjEdges[z + 1] - zProjEdges[z];
-            vH1_cpposE_byZ[z]->Scale(1.0 / eqTime);           // 他のヒストグラムと同様にcps換算
-            vH1_cpposE_byZ[z]->Scale(1.0 / (10 * thickness)); // 厚みで割って単位をs^-1 mm^-1に変換
-            yMaxEZ = max(yMaxEZ, vH1_cpposE_byZ[z]->GetMaximum());
-        }
-        TLegend *legEZ = new TLegend(0.55, 0.7, 0.88, 0.88);
-        for (int z = 0; z < nZProjRegions; ++z)
-        {
-            vH1_cpposE_byZ[z]->SetMaximum(yMaxEZ * 1.5);
-            vH1_cpposE_byZ[z]->SetMinimum(1e-4);
-            vH1_cpposE_byZ[z]->Draw(z == 0 ? "HIST" : "HIST SAME");
-            legEZ->AddEntry(vH1_cpposE_byZ[z], zProjLabels[z], "l");
-        }
-        legEZ->Draw();
-        vCan.push_back(cCpposEByZ);
-
         for (int i = 0; i < vvHist.size(); ++i)
         {
             auto &vHist = vvHist[i];
             int nvHist = vHist.size();
             vCan.push_back(new TCanvas(Form("c%d", i + 2), vHist[0].first->GetTitle(), 800, 600));
-            TLegend *legend = (nvHist > 1) ? new TLegend(0.55, 0.7, 0.88, 0.88) : nullptr;
+            TLegend *legend = (nvHist > 1) ? new TLegend(0.55, 0.77, 0.88, 0.93) : nullptr;
+            if (nvHist > 6)
+                legend->SetNColumns(2);
 
             double yMax = 0;
             for (auto &entry : vHist)
@@ -584,6 +591,11 @@ void DetectPosition()
                 h->Scale(1.0 / eqTime); // Convert to cps
                 yMax = max(yMax, entry.first->GetMaximum());
             }
+
+            bool hasTotal = (nvHist > 1 && vHist[0].second == "Total");
+            double groupTotalInt = (nvHist > 1)
+                                       ? vHist[0].first->Integral(0, vHist[0].first->GetNbinsX() + 1)
+                                       : 0.0;
 
             for (int j = 0; j < vHist.size(); ++j)
             {
@@ -600,7 +612,7 @@ void DetectPosition()
                         gPad->SetLogz();
                         h2->SetMinimum(0);
                     }
-                    else if (std::find(vH2_cpposEY_byZ.begin(), vH2_cpposEY_byZ.end(), h2) != vH2_cpposEY_byZ.end())
+                    else if (std::find(vh2_cpposY.begin(), vh2_cpposY.end(), h2) != vh2_cpposY.end())
                     {
                         gPad->SetLogx();
                         gPad->SetLogz();
@@ -616,13 +628,30 @@ void DetectPosition()
                 {
                     gPad->SetGridx();
                     gPad->SetGridy();
-                    h1->SetMaximum(yMax * 1.3);
-                    h1->SetMinimum(0);
+                    bool isEnergyProj = TString(h1->GetName()).BeginsWith("h1_cpposEfid_Z");
+                    if (isEnergyProj)
+                    {
+                        gPad->SetLogx();
+                        gPad->SetLogy();
+                        h1->SetMaximum(yMax * 2);
+                        h1->SetMinimum(5e-3);
+                    }
+                    else
+                    {
+                        h1->SetMaximum(yMax * 1.3);
+                        h1->SetMinimum(0);
+                    }
                     h1->Draw(j == 0 ? "HIST E" : "HIST E SAME");
                 }
 
                 if (legend)
-                    legend->AddEntry(h, title, "l");
+                {
+                    bool showFrac = (hasTotal && j > 0 && groupTotalInt > 0);
+                    double frac = (j > 0 && groupTotalInt > 0)
+                                      ? h->Integral(0, h->GetNbinsX() + 1) / groupTotalInt * 100.0
+                                      : 0.0;
+                    legend->AddEntry(h, showFrac ? Form("%s (%.1f%%)", title.Data(), frac) : title, "l");
+                }
             }
             if (legend)
                 legend->Draw();
@@ -631,7 +660,7 @@ void DetectPosition()
         // save PDF
         if (true)
         {
-            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition.pdf";
+            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_sideCut" + Form("%.0f", sideCut) + "mmt.pdf";
             if (vCan.size() == 1)
                 vCan.at(0)->Print(fPdfOut);
             else

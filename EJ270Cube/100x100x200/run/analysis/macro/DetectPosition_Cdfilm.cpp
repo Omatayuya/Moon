@@ -57,12 +57,11 @@ void DetectPosition_Cdfilm()
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
 
-        constexpr double sideCut = 20;                 // mm, 20mm以内の範囲でのみカウントする
+        constexpr double sideCut = 5;                 // mm, 20mm以内の範囲でのみカウントする
         constexpr double fidHalfWidth = 50 - sideCut; // mm, 50mmの検出器のうち、20mm以内の範囲を除いた30mmの範囲でカウントする
 
         vector<double> cdPlanePosXY = {
             10 + DetectorOffsetZ,
-            20 + DetectorOffsetZ,
             160 + DetectorOffsetZ,
         }; // XY平面 (法線: Z軸) の位置 [mm]
         vector<double> cdPlanePosZX = {-50, -50 + sideCut, 50 - sideCut, 50}; // ZX平面 (法線: Y軸) の位置 [mm]
