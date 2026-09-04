@@ -35,8 +35,8 @@ using namespace std;
 
 void DetectPosition()
 {
-    // vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
-    vector<TString> folder = {"0ppm"};
+    vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
+    // vector<TString> folder = {"0ppm"};
 
     for (int folderID = 0; folderID < folder.size(); folderID++)
     {
@@ -49,10 +49,8 @@ void DetectPosition()
         const Double_t irrArea = 600 * 600;     // irradiation surface area (cm^2) for Proton, Helium
         constexpr Double_t EJ270HalfWidth = 35; // EJ270 width (mm)
 
-        constexpr double sideCut = 5; // mm, 20mm以内の範囲でのみカウントする
-
         // energy window
-        constexpr double scatterEdepLow = 1.0; // MeV
+        constexpr double scatterEdepLow = 1.0;  // MeV
         constexpr double scatterEdepHigh = 3.0; // MeV
         constexpr double captureEdepLow = 4.5;  // MeV
         constexpr double captureEdepHigh = 5.0; // MeV
@@ -60,10 +58,15 @@ void DetectPosition()
         // Thermal neutron cut (109Cd)
         constexpr double TNEnergyCut = 5e-7; // MeV
 
-        constexpr double fidHalfWidth = EJ270HalfWidth - sideCut; // mm, 50mmの検出器のうち、20mm以内の範囲を除いた30mmの範囲でカウントする
+        // Fiducial cut & virtual Cd layer
+        bool useFidcut = true;                                    // Use fiducial cut for capture count rate
+        constexpr double sideCut = 5;                             // mm
+        constexpr double fidHalfWidth = EJ270HalfWidth - sideCut; // mm
 
+        bool useCd = true; // Use fiducial cut for capture count rate
         vector<double> cdPlanePosXY = {
             10 + DetectorOffsetZ,
+            20 + DetectorOffsetZ,
             70 + DetectorOffsetZ,
         }; // XY平面 (法線: Z軸) の位置 [mm]
         vector<double> cdPlanePosZX = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut}; // ZX平面 (法線: Y軸) の位置 [mm]
@@ -250,7 +253,7 @@ void DetectPosition()
             // const double preKinEMeV = fPreKinE / 1e6; // Convert eV to MeV
             // const double edepMeV = fEdep / 1e6;       // Convert eV to MeV
 
-            if (string(fpname) == "neutron")
+            if (string(fpname) == "neutron" && useCd)
             {
                 bool cdAbsorbed = false;
                 for (double zPlane : cdPlanePosXY) // XY平面 (法線: Z軸)
@@ -283,7 +286,7 @@ void DetectPosition()
 
             if (string(collection) == "TrackerHitsCollection")
             {
-                if (fabs(fPrePosX) > fidHalfWidth || fabs(fPrePosY) > fidHalfWidth)
+                if (useFidcut && (fabs(fPrePosX) > fidHalfWidth || fabs(fPrePosY) > fidHalfWidth))
                     continue;
 
                 EventChamberID eventChamberID{eventID, primEnergy, string(collection)};
@@ -357,7 +360,7 @@ void DetectPosition()
         int nBinsXY = (maxXY - minXY) / BinWidthXY;
 
         // Match vH_ip_theta's log-uniform energy binning (see B2RunAction.cc)
-        constexpr int nEnergyBins = 200;
+        constexpr int nEnergyBins = 100;
         constexpr double energyMin = 1e-10; // MeV
         constexpr double energyMax = 1e4;   // MeV
         double energyBins[nEnergyBins + 1];
@@ -371,7 +374,7 @@ void DetectPosition()
         const int primEnergyColors[nEBins] = {kOrange + 8, kGreen - 7, kGreen + 2, kBlue};
 
         // Sensor thickness bins
-        vector<double> vSensThick = {0, 5, 10, 20, 40, 60, 70, 75, 80};
+        vector<double> vSensThick = {0, 5, 10, 20, 40};
         const int nSensThick = vSensThick.size() - 1;
         vector<TString> zRegionLabels;
         for (int z = 0; z < nSensThick; ++z)
@@ -420,7 +423,7 @@ void DetectPosition()
                                               zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
                                          nEnergyBins, energyBins);
             vh1_cpSpectrum[z]->SetLineColor(TColor::GetColorPalette(
-                static_cast<int>(1.0 * z * (TColor::GetNumberOfColors() - 1) / (nSensThick - 1))));
+                static_cast<int>(0.1 + 0.8 * z / (nSensThick - 1) * (TColor::GetNumberOfColors() - 1))));
 
             TString hname_cpSpectrum_ind = Form("h1_cpposEfid_Z%d_ind", z);
             vh1_cpSpectrum_ind[z] = new TH1D(hname_cpSpectrum_ind,
@@ -432,9 +435,9 @@ void DetectPosition()
             {
                 TString hname_cpposY_byE = Form("h1_cpposY_Z%d_E%d", z, e);
                 vvh1_cpposY_byE[z][e] = new TH1D(hname_cpposY_byE,
-                                                Form("Capture Position Y (%s, %s);Y (mm);Count rate (s^{-1} %d mm^{-1})",
-                                                     zRegionLabels[z].Data(), primEnergyLabels[e].Data(), BinWidthXY),
-                                                nBinsXY, minXY, maxXY);
+                                                 Form("Capture Position Y (%s, %s);Y (mm);Count rate (s^{-1} %d mm^{-1})",
+                                                      zRegionLabels[z].Data(), primEnergyLabels[e].Data(), BinWidthXY),
+                                                 nBinsXY, minXY, maxXY);
                 vvh1_cpposY_byE[z][e]->SetLineColor(primEnergyColors[e]);
             }
         }
@@ -660,7 +663,14 @@ void DetectPosition()
         // save PDF
         if (true)
         {
-            TString fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_sideCut" + Form("%.0f", sideCut) + "mmt.pdf";
+            TString fPdfOut;
+            if (useCd && useFidcut)
+                fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_sideCut" + Form("%.0f", sideCut) + "mm_useCd_Fidcut.pdf";
+            else if (!useCd && !useFidcut)
+                fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition.pdf";
+            else
+                cout << "Error: Invalid combination of useCd and useFidcut flags." << endl;
+
             if (vCan.size() == 1)
                 vCan.at(0)->Print(fPdfOut);
             else

@@ -32,6 +32,7 @@ using namespace std;
 #include <TPaveText.h>
 #include <TMultiGraph.h>
 #include <TLegend.h>
+#include <TGraphSmooth.h>
 
 void CountRate_To_WaterContent()
 {
@@ -50,9 +51,12 @@ void CountRate_To_WaterContent()
     constexpr double TNEnergyCut = 5e-7; // MeV
 
     // Fiducial cut & virtual Cd layer (DetectPosition.cpp と同じ)
-    constexpr Double_t EJ270HalfWidth = 35;                                                           // mm
-    constexpr double sideCut = 5;                                                                     // mm
-    const double fidHalfWidth = EJ270HalfWidth - sideCut;                                             // mm
+    bool useFidcut = true;                                // Use fiducial cut for capture count rate
+    constexpr Double_t EJ270HalfWidth = 35;               // mm
+    constexpr double sideCut = 5;                         // mm
+    const double fidHalfWidth = EJ270HalfWidth - sideCut; // mm
+
+    bool useCd = true;                                                                                // Use fiducial cut for capture count rate
     vector<double> cdPlanePosXY = {10 + DetectorOffsetZ, 20 + DetectorOffsetZ, 70 + DetectorOffsetZ}; // XY平面 (法線: Z軸) [mm]
     vector<double> cdPlanePosZX = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut};              // ZX平面 (法線: Y軸) [mm]
     vector<double> cdPlanePosZY = {-EJ270HalfWidth + sideCut, EJ270HalfWidth - sideCut};              // ZY平面 (法線: X軸) [mm]
@@ -251,7 +255,7 @@ void CountRate_To_WaterContent()
                 continue;
             }
 
-            if (string(fpname) == "neutron")
+            if (string(fpname) == "neutron" && useCd)
             {
                 bool cdAbsorbed = false;
                 for (double zPlane : cdPlanePosXY) // XY平面 (法線: Z軸)
@@ -293,6 +297,11 @@ void CountRate_To_WaterContent()
 
             if (string(collection) == "TrackerHitsCollection")
             {
+                if (useFidcut && (abs(fPrePosX) > fidHalfWidth || abs(fPrePosY) > fidHalfWidth))
+                {
+                    continue; // Skip this step if outside the fiducial volume
+                }
+
                 EventChamberID eventChamberID{eventID, primEnergy, string(collection)};
                 auto &acc = DetectorchamberMap[eventChamberID];
                 acc.edepSum += fEdep;
@@ -446,9 +455,7 @@ void CountRate_To_WaterContent()
             vCpLayerErr[z].push_back(capErr);
 
             double ratio = (capSum > 0 && scatterSum > 0) ? capSum / scatterSum : 0.0;
-            double ratioErr = (ratio > 0)
-                                  ? ratio * sqrt(pow(capErr / capSum, 2) + pow(scatterErr / scatterSum, 2))
-                                  : 0.0;
+            double ratioErr = (ratio > 0) ? ratio * sqrt(pow(capErr / capSum, 2) + pow(scatterErr / scatterSum, 2)) : 0.0;
             vRatioLayer[z].push_back(ratio);
             vRatioLayerErr[z].push_back(ratioErr);
         }
@@ -586,6 +593,7 @@ void CountRate_To_WaterContent()
 
         TCanvas *cRatioLayer_0ppm = new TCanvas("cRatioLayer_0ppm", "Count rate ratio per layer (normalized to 0 ppm)", 800, 600);
         cRatioLayer_0ppm->SetLogx();
+        mgRatioLayer_0ppm->SetMinimum(0);
         mgRatioLayer_0ppm->Draw("A");
         mgRatioLayer_0ppm->GetXaxis()->SetLimits(xmin, xmax);
         legRatioLayer_0ppm->Draw();
