@@ -443,27 +443,9 @@ void DetectPosition()
                 vvh1_cpposY_byE[z][e]->SetLineColor(primEnergyColors[e]);
             }
         }
+        gStyle->SetPalette(savedPalette.GetSize(), savedPalette.GetArray());
         TH1F *h1_scposZ = new TH1F("h1_scposZ", Form("Scatter Position Z Distribution;Z (mm);Count rate (s^{-1} %d mm^{-1})", BinWidthZ), nBinsZ, minZ, maxZ);
         TH2D *h2_scposXY = new TH2D("h2_scposXY", Form("Scatter Position XY Distribution;X (mm);Y (mm);Count rate (s^{-1} %d#times%d mm^{-2})", BinWidthXY, BinWidthXY), nBinsXY, minXY, maxXY, nBinsXY, minXY, maxXY);
-        vector<TH1D *> vh1_scSpectrum(nSensThick);
-        vector<TH1D *> vh1_scSpectrum_ind(nSensThick);
-        for (int z = 0; z < nSensThick; ++z)
-        {
-            TString hname_scSpectrum = Form("h1_scposEfid_Z%d", z);
-            vh1_scSpectrum[z] = new TH1D(hname_scSpectrum,
-                                         Form("Scatter Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
-                                              zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
-                                         nEnergyBins, energyBins);
-            vh1_scSpectrum[z]->SetLineColor(TColor::GetColorPalette(
-                static_cast<int>(0.1 + 0.8 * z / (nSensThick - 1) * (TColor::GetNumberOfColors() - 1))));
-
-            TString hname_scSpectrum_ind = Form("h1_scposEfid_Z%d_ind", z);
-            vh1_scSpectrum_ind[z] = new TH1D(hname_scSpectrum_ind,
-                                             Form("Scatter Energy (%s, %.0f < X < %.0f );Energy (MeV);Count rate (s^{-1})",
-                                                  zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh),
-                                             nEnergyBins, energyBins);
-        }
-        gStyle->SetPalette(savedPalette.GetSize(), savedPalette.GetArray());
 
         // vvHist: vector of vector of pairs of histogram and legend label
         using HistLegPair = pair<TH1 *, TString>;
@@ -503,19 +485,6 @@ void DetectPosition()
         }
         vvHist.push_back({{h1_scposZ, "Scatter Position Z"}});
         vvHist.push_back({{h2_scposXY, "Scatter Position XY"}});
-        for (int z = 0; z < nSensThick; ++z)
-        {
-            vvHist.push_back({{vh1_scSpectrum_ind[z], Form("Scatter Energy (%s, %.0f < X < %.0f)", zRegionLabels[z].Data(), xFidCutLow, xFidCutHigh)}});
-        }
-        {
-            vh1_scSpectrum[0]->SetTitle("Scatter Energy by Z Region ;Energy (MeV);Count rate (s^{-1} bin^{-1})");
-            vector<HistLegPair> group;
-            for (int z = 0; z < nSensThick; ++z)
-            {
-                group.push_back({vh1_scSpectrum[z], zRegionLabels[z]});
-            }
-            vvHist.push_back(group);
-        }
 
         for (int i = 0; i < entries; ++i)
         {
@@ -545,7 +514,8 @@ void DetectPosition()
                 {
                     if (capturePosZ >= vSensThick[z] && capturePosZ < vSensThick[z + 1])
                     {
-                        
+                        if (capturePosX > xFidCutLow && capturePosX < xFidCutHigh)
+                        {
                             vh2_cpposY[z]->Fill(eventChamberID.primEnergy, capturePosY);
 
                             // Y(position-axis) projection
@@ -560,7 +530,7 @@ void DetectPosition()
                             // Energy projection
                             vh1_cpSpectrum[z]->Fill(eventChamberID.primEnergy);
                             vh1_cpSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
-                        
+                        }
                     }
                 }
             }
@@ -572,17 +542,6 @@ void DetectPosition()
             {
                 h1_scposZ->Fill(scatterPosZ);
                 h2_scposXY->Fill(scatterPosX, scatterPosY);
-
-                for (int z = 0; z < nSensThick; ++z)
-                {
-                    if (scatterPosZ >= vSensThick[z] && scatterPosZ < vSensThick[z + 1])
-                    {
-                        
-                            vh1_scSpectrum[z]->Fill(eventChamberID.primEnergy);
-                            vh1_scSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
-                        
-                    }
-                }
             }
         }
 
@@ -674,12 +633,12 @@ void DetectPosition()
                 {
                     gPad->SetGridx();
                     gPad->SetGridy();
-                    bool isEnergyProj = TString(h1->GetName()).BeginsWith("h1_cpposEfid_Z") || TString(h1->GetName()).BeginsWith("h1_scposEfid_Z");
+                    bool isEnergyProj = TString(h1->GetName()).BeginsWith("h1_cpposEfid_Z");
                     if (isEnergyProj)
                     {
                         gPad->SetLogx();
                         gPad->SetLogy();
-                        h1->SetMaximum(yMax * 3);
+                        h1->SetMaximum(yMax * 2);
                         h1->SetMinimum(5e-3);
                     }
                     else
