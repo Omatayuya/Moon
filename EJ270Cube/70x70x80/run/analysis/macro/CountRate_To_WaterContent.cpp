@@ -472,12 +472,16 @@ void CountRate_To_WaterContent()
 
     TMultiGraph *mgCpLayer = new TMultiGraph();
     mgCpLayer->SetTitle("Capture count rate per layer vs H content;H content (ppm);Count rate (s^{-1})");
-    TLegend *legCpLayer = new TLegend(0.18, 0.12, 0.45, 0.25);
+    TLegend *legCpLayer = new TLegend(0.18, 0.22, 0.45, 0.35);
+
+    TMultiGraph *mgCpLayer_0ppm = new TMultiGraph();
+    mgCpLayer_0ppm->SetTitle("Capture count rate per layer (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate");
+    TLegend *legCpLayer_0ppm = new TLegend(0.18, 0.22, 0.45, 0.35);
 
     TMultiGraph *mgRatioLayer = new TMultiGraph();
     mgRatioLayer->SetTitle("Count rate ratio (capture layer / scatter total) vs H content;H content (ppm);Count rate ratio");
     mgRatioLayer->SetMinimum(0);
-    TLegend *legRatioLayer = new TLegend(0.18, 0.12, 0.45, 0.25);
+    TLegend *legRatioLayer = new TLegend(0.18, 0.17, 0.45, 0.30);
 
     TMultiGraph *mgRatioLayer_0ppm = new TMultiGraph();
     mgRatioLayer_0ppm->SetTitle("Count rate ratio (normalized to 0 ppm) vs H content;H content (ppm);Relative count rate ratio");
@@ -498,6 +502,24 @@ void CountRate_To_WaterContent()
         grCp->SetMarkerStyle(mstyle);
         mgCpLayer->Add(grCp, "PL");
         legCpLayer->AddEntry(grCp, zRegionLabels[z], "lp");
+
+        vector<double> &yCp = vCpLayer[z];
+        vector<double> &yCpErr = vCpLayerErr[z];
+        double yCp0 = yCp.at(iZero), yCp0Err = yCpErr.at(iZero);
+        vector<double> yCpNorm(yCp.size()), yCpNormErr(yCp.size());
+        for (size_t j = 0; j < yCp.size(); ++j)
+        {
+            yCpNorm.at(j) = (yCp0 > 0) ? yCp.at(j) / yCp0 : 0.0;
+            yCpNormErr.at(j) = (yCpNorm.at(j) > 0 && yCp.at(j) > 0)
+                                   ? yCpNorm.at(j) * sqrt(pow(yCpErr.at(j) / yCp.at(j), 2) + pow(yCp0Err / yCp0, 2))
+                                   : 0.0;
+        }
+        TGraphErrors *grCpNorm = new TGraphErrors(vPpm.size(), vPpm.data(), yCpNorm.data(), 0, yCpNormErr.data());
+        grCpNorm->SetMarkerColor(col);
+        grCpNorm->SetLineColor(col);
+        grCpNorm->SetMarkerStyle(mstyle);
+        mgCpLayer_0ppm->Add(grCpNorm, "PL");
+        legCpLayer_0ppm->AddEntry(grCpNorm, zRegionLabels[z], "lp");
 
         TGraphErrors *grRatio = new TGraphErrors(vPpm.size(), vPpm.data(), vRatioLayer[z].data(), 0, vRatioLayerErr[z].data());
         grRatio->SetMarkerColor(col);
@@ -582,6 +604,14 @@ void CountRate_To_WaterContent()
         mgCpLayer->GetXaxis()->SetLimits(xmin, xmax);
         legCpLayer->Draw();
         vCan.push_back(cCpLayer);
+
+        TCanvas *cCpLayer_0ppm = new TCanvas("cCpLayer_0ppm", "Capture count rate per layer (normalized to 0 ppm)", 800, 600);
+        cCpLayer_0ppm->SetLogx();
+        mgCpLayer_0ppm->SetMinimum(0);
+        mgCpLayer_0ppm->Draw("A");
+        mgCpLayer_0ppm->GetXaxis()->SetLimits(xmin, xmax);
+        legCpLayer_0ppm->Draw();
+        vCan.push_back(cCpLayer_0ppm);
 
         TCanvas *cRatioLayer = new TCanvas("cRatioLayer", "Count rate ratio per layer vs H content", 800, 600);
         cRatioLayer->SetLogx();

@@ -11,6 +11,7 @@
 #include <map>
 #include <tuple>
 #include <sstream>
+#include <regex>
 #include <limits>
 
 using namespace std;
@@ -32,11 +33,29 @@ using namespace std;
 #include <TPaveText.h>
 #include <TMultiGraph.h>
 #include <TLegend.h>
+#include <TSystem.h>
 
 void DetectPosition()
 {
-    // vector<TString> folder = {"0ppm", "10ppm", "20ppm", "50ppm", "100ppm", "200ppm", "500ppm", "1000ppm", "2000ppm", "5000ppm", "10000ppm"};
-    vector<TString> folder = {"0ppm"};
+
+    vector<TString> folder;
+    {
+        ifstream ifsFolder("../folders.list");
+        if (!ifsFolder)
+        {
+            cerr << "--- ../folders.list not found. Run run_layered/setupDirs.sh first." << endl;
+            return;
+        }
+        string line;
+        while (getline(ifsFolder, line))
+        {
+            if (!line.empty())
+                folder.push_back(TString(line));
+        }
+    }
+
+    // folder名 "box_10x10x{thickness}m_depth_{depth}m_H_{ppm}ppm" を解析する正規表現
+    std::regex folderNameRe("box_10x10x([0-9.]+)m_depth_([0-9.]+)m_H_([0-9.]+)ppm");
 
     for (int folderID = 0; folderID < folder.size(); folderID++)
     {
@@ -545,22 +564,21 @@ void DetectPosition()
                 {
                     if (capturePosZ >= vSensThick[z] && capturePosZ < vSensThick[z + 1])
                     {
-                        
-                            vh2_cpposY[z]->Fill(eventChamberID.primEnergy, capturePosY);
 
-                            // Y(position-axis) projection
-                            vh1_cpposY[z]->Fill(capturePosY);
-                            for (int e = 0; e < nEBins; ++e)
+                        vh2_cpposY[z]->Fill(eventChamberID.primEnergy, capturePosY);
+
+                        // Y(position-axis) projection
+                        vh1_cpposY[z]->Fill(capturePosY);
+                        for (int e = 0; e < nEBins; ++e)
+                        {
+                            if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
                             {
-                                if (eventChamberID.primEnergy >= primEnergyEdges[e] && eventChamberID.primEnergy < primEnergyEdges[e + 1])
-                                {
-                                    vvh1_cpposY_byE[z][e]->Fill(capturePosY);
-                                }
+                                vvh1_cpposY_byE[z][e]->Fill(capturePosY);
                             }
-                            // Energy projection
-                            vh1_cpSpectrum[z]->Fill(eventChamberID.primEnergy);
-                            vh1_cpSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
-                        
+                        }
+                        // Energy projection
+                        vh1_cpSpectrum[z]->Fill(eventChamberID.primEnergy);
+                        vh1_cpSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
                     }
                 }
             }
@@ -577,10 +595,9 @@ void DetectPosition()
                 {
                     if (scatterPosZ >= vSensThick[z] && scatterPosZ < vSensThick[z + 1])
                     {
-                        
-                            vh1_scSpectrum[z]->Fill(eventChamberID.primEnergy);
-                            vh1_scSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
-                        
+
+                        vh1_scSpectrum[z]->Fill(eventChamberID.primEnergy);
+                        vh1_scSpectrum_ind[z]->Fill(eventChamberID.primEnergy);
                     }
                 }
             }
@@ -699,33 +716,62 @@ void DetectPosition()
                     legend->AddEntry(h, showFrac ? Form("%s (%.1f%%)", title.Data(), frac) : title, "l");
                 }
             }
-            // if (legend)
-                // legend->Draw();
+            if (legend)
+            legend->Draw();
         }
 
         // save PDF
-        if (true)
+         if (true)
         {
-            TString fPdfOut;
+            TString fNameSuffix;
+            TString fsideCut = Form("%.0f", sideCut);
             if (useCd && useFidcut)
-                fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition_sideCut" + Form("%.0f", sideCut) + "mm_useCd_Fidcut.pdf";
+                fNameSuffix = "_DetectPosition_sideCut" + fsideCut + "mm_useCd_Fidcut.pdf";
             else if (!useCd && !useFidcut)
-                fPdfOut = "../fig/" + folder[folderID] + "_DetectPosition.pdf";
+                fNameSuffix = "_DetectPosition.pdf";
             else
                 cout << "Error: Invalid combination of useCd and useFidcut flags." << endl;
 
-            if (vCan.size() == 1)
-                vCan.at(0)->Print(fPdfOut);
+            std::smatch match;
+            std::string folderStr = folder[folderID].Data();
+
+            vector<TString> fPdfOutList;
+            if (!std::regex_search(folderStr, match, folderNameRe))
+            {
+                cerr << "Warning: failed to parse folder name for depth/H grouping: " << folderStr << endl;
+                fPdfOutList.push_back("../fig/" + folder[folderID] + fNameSuffix);
+            }
             else
             {
-                for (size_t i = 0; i < vCan.size(); ++i)
+                TString thicknessStr = match[1].str();
+                TString depthStr = match[2].str();
+                TString ppmStr = match[3].str();
+
+                TString depthDir = "../fig/by_depth/depth_" + depthStr + "m";
+                gSystem->mkdir(depthDir, kTRUE);
+
+                TString hDir = "../fig/by_H_total/H_" + ppmStr + "ppm_thickness_" + thicknessStr + "m";
+                gSystem->mkdir(hDir, kTRUE);
+
+                fPdfOutList.push_back(depthDir + "/" + folder[folderID] + fNameSuffix);
+                fPdfOutList.push_back(hDir + "/" + folder[folderID] + fNameSuffix);
+            }
+
+            for (const auto &fPdfOut : fPdfOutList)
+            {
+                if (vCan.size() == 1)
+                    vCan.at(0)->Print(fPdfOut);
+                else
                 {
-                    if (i == 0)
-                        vCan.at(i)->Print(fPdfOut + "(");
-                    else if (i == vCan.size() - 1)
-                        vCan.at(i)->Print(fPdfOut + ")");
-                    else
-                        vCan.at(i)->Print(fPdfOut);
+                    for (size_t i = 0; i < vCan.size(); ++i)
+                    {
+                        if (i == 0)
+                            vCan.at(i)->Print(fPdfOut + "(");
+                        else if (i == vCan.size() - 1)
+                            vCan.at(i)->Print(fPdfOut + ")");
+                        else
+                            vCan.at(i)->Print(fPdfOut);
+                    }
                 }
             }
         }
