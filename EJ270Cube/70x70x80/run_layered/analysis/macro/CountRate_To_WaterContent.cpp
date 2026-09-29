@@ -526,7 +526,7 @@ void CountRate_To_WaterContent()
     for (const auto &depthEntry : depthMap)
     {
         vCurveKey.push_back(depthEntry.second);
-        vCurveLabel.push_back("depth " + depthEntry.second + " m");
+        vCurveLabel.push_back("d = " + depthEntry.second + " m");
     }
 
     vector<map<double, size_t>> vCurvePoints(vCurveKey.size());
@@ -576,12 +576,13 @@ void CountRate_To_WaterContent()
 
             bool isUniform = (c == 0);
             int d = (int)c - 1;
-            Color_t col = isUniform ? kBlack : gStyle->GetColorPalette(nDepth > 1 ? static_cast<int>((0.1 + 0.8 * d / (nDepth - 1)) * (nColors - 1)) : 0);
+            Color_t col = isUniform ? kGray : gStyle->GetColorPalette(nDepth > 1 ? static_cast<int>((0.1 + 0.8 * d / (nDepth - 1)) * (nColors - 1)) : 0);
             TGraphErrors *gr = new TGraphErrors(x.size(), x.data(), y.data(), 0, yErr.data());
             gr->SetMarkerColor(col);
             gr->SetLineColor(col);
             gr->SetLineWidth(isUniform ? 3 : 2);
-            gr->SetMarkerStyle(isUniform ? 20 : 21 + (d % 9));
+            gr->SetLineStyle(isUniform ? 2 : 1);
+            gr->SetMarkerStyle(isUniform ? 20 : 21);
             mgSc->Add(gr, "PL");
             legSc->AddEntry(gr, vCurveLabel[c], "lp");
         }
@@ -601,27 +602,27 @@ void CountRate_To_WaterContent()
 
         TMultiGraph *mgCp = new TMultiGraph();
         mgCp->SetTitle("Capture count rate (" + titleTag + ");" + xTitle + ";Count rate (s^{-1})");
-        TLegend *legCp = new TLegend(0.15, 0.15, 0.60, 0.40);
+        TLegend *legCp = new TLegend(0.15, 0.12, 0.50, 0.30);
         legCp->SetNColumns(2);
 
         TMultiGraph *mgCp_0ppm = new TMultiGraph();
         mgCp_0ppm->SetTitle("Capture count rate normalized to 0 ppm (" + titleTag + ");" + xTitle + ";Relative count rate");
-        TLegend *legCp_0ppm = new TLegend(0.15, 0.15, 0.60, 0.38);
+        TLegend *legCp_0ppm = new TLegend(0.15, 0.12, 0.50, 0.30);
         legCp_0ppm->SetNColumns(2);
 
         TMultiGraph *mgRatio = new TMultiGraph();
         mgRatio->SetTitle("Count rate ratio capture / scatter total (" + titleTag + ");" + xTitle + ";Count rate ratio");
-        TLegend *legRatio = new TLegend(0.15, 0.15, 0.60, 0.38);
+        TLegend *legRatio = new TLegend(0.15, 0.12, 0.50, 0.30);
         legRatio->SetNColumns(2);
 
         TMultiGraph *mgRatio_0ppm = new TMultiGraph();
         mgRatio_0ppm->SetTitle("Count rate ratio normalized to 0 ppm (" + titleTag + ");" + xTitle + ";Relative count rate ratio");
-        TLegend *legRatio_0ppm = new TLegend(0.15, 0.15, 0.60, 0.38);
+        TLegend *legRatio_0ppm = new TLegend(0.15, 0.12, 0.50, 0.30);
         legRatio_0ppm->SetNColumns(2);
 
         TMultiGraph *mgSigTime = new TMultiGraph();
         mgSigTime->SetTitle(Form("Observation time for %.0f#sigma separation from 0 ppm (%s);%s;Observation time (s)", nSigma, titleTag.Data(), xTitle.Data()));
-        TLegend *legSigTime = new TLegend(0.15, 0.15, 0.88, 0.38);
+        TLegend *legSigTime = new TLegend(0.15, 0.12, 0.50, 0.30);
         legSigTime->SetNColumns(2);
 
         // 0 ppm 点 (iZero) の値
@@ -666,7 +667,7 @@ void CountRate_To_WaterContent()
             bool isUniform = (c == 0);
             int d = (int)c - 1;
             Color_t col = isUniform ? kGray : gStyle->GetColorPalette(nDepth > 1 ? static_cast<int>((0.1 + 0.8 * d / (nDepth - 1)) * (nColors - 1)) : 0);
-            int mstyle = isUniform ? 20 : 21 + (d % 9);
+            int mstyle = isUniform ? 20 : 21;
             int lstyle = isUniform ? 2 : 1;
             int lwidth = 2;
 
@@ -760,8 +761,6 @@ void CountRate_To_WaterContent()
             cSigTime->SetGridy(0);
             mgSigTime->Draw("A");
             mgSigTime->GetXaxis()->SetLimits(xmin, xmax);
-            legSigTime->Draw();
-
             vector<double> vTimeLine{60, 3600, 3600 * 24, 3600 * 24 * 7};
             vector<TString> vTimeText{"1m", "1h", "1d", "1w"};
             for (size_t k = 0; k < vTimeLine.size(); ++k)
@@ -773,6 +772,9 @@ void CountRate_To_WaterContent()
                 TText *t = new TText(xmin * 1.2, vTimeLine[k] * 0.5, vTimeText[k]);
                 t->Draw();
             }
+            legSigTime->Draw();
+
+            
             vCan.push_back(cSigTime);
         }
     }
